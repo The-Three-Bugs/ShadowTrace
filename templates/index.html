@@ -439,6 +439,64 @@
   </div>
 </div>
 
+<!-- finding inspection modal -->
+<div class="modal-overlay" id="findingModalOverlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title-wrap">
+        <h3 id="modalFindingTitle">Finding Inspection</h3>
+        <p class="card-sub" id="modalFindingSub">Rule Details & Evidence</p>
+      </div>
+      <button class="icon-btn" id="modalCloseBtn"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-grid">
+        <div>
+          <label class="modal-label">Rule ID & Name</label>
+          <div class="modal-val" id="modalRuleName">—</div>
+        </div>
+        <div>
+          <label class="modal-label">Severity & Status</label>
+          <div class="modal-val flex-gap">
+            <span id="modalSeverityBadge">—</span>
+            <select id="modalStatusSelect" class="select sm">
+              <option>New</option>
+              <option>Under Review</option>
+              <option>Resolved</option>
+              <option>False Positive</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <label class="modal-label">Description / Evidence</label>
+        <div class="modal-text-box" id="modalDescription">—</div>
+      </div>
+      <div style="margin-top: 16px;">
+        <label class="modal-label">Supporting Events (<span id="modalEventCount">0</span>)</label>
+        <div class="table-scroll sm" style="max-height: 180px;">
+          <table class="data-table sm">
+            <thead>
+              <tr><th>ID</th><th>Timestamp</th><th>Source IP</th><th>User</th><th>Event Type</th><th>Status</th></tr>
+            </thead>
+            <tbody id="modalEventsBody">
+              <tr class="empty-row"><td colspan="6">No supporting events.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <label class="modal-label">Investigation Notes</label>
+        <div class="notes-list" id="modalNotesList"></div>
+        <div class="note-input-row" style="margin-top: 10px; display: flex; gap: 8px;">
+          <input type="text" id="modalNoteInput" class="input" placeholder="Add investigation note…" style="flex:1;" />
+          <button class="btn primary sm" id="modalAddNoteBtn">Add Note</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- custom cyber cursor -->
 <div class="cyber-cursor" id="cyberCursor"></div>
 
