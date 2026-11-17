@@ -64,6 +64,7 @@ function countUp(el, target) {
 const viewMeta = {
   dashboard: { title: 'Security Overview', crumb: 'Dashboard' },
   analyzer: { title: 'Log Analyzer', crumb: 'Log Analyzer' },
+  investigations: { title: 'Investigation Management', crumb: 'Investigations' },
   threats: { title: 'Threat Detection', crumb: 'Threat Detection' },
   settings: { title: 'Settings', crumb: 'Settings' }
 };
@@ -80,6 +81,7 @@ function switchView(view) {
 
   if (view === 'dashboard') loadStats();
   if (view === 'analyzer') loadLogs();
+  if (view === 'investigations') loadInvestigations();
   if (view === 'threats') loadThreats();
 }
 
@@ -129,8 +131,265 @@ const api = {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Failed to load sample.');
     return data;
+  },
+  async getInvestigations(search = '', status = 'All') {
+    const p = new URLSearchParams({ search, status });
+    const r = await fetch(`/api/investigations?${p}`);
+    return r.json();
+  },
+  async createInvestigation(payload) {
+    const r = await fetch('/api/investigations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || 'Failed to create investigation.');
+    return data;
+  },
+  async getInvestigation(id) {
+    const r = await fetch(`/api/investigations/${id}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || 'Failed to fetch investigation.');
+    return data;
+  },
+  async updateInvestigation(id, payload) {
+    const r = await fetch(`/api/investigations/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || 'Failed to update investigation.');
+    return data;
+  },
+  async uploadEvidence(invId, file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`/api/investigations/${invId}/evidence`, { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || 'Failed to upload evidence.');
+    return data;
   }
 };
+
+/* ===================== INVESTIGATIONS & EVIDENCE ===================== */
+let currentInvestigationId = null;
+
+async function loadInvestigations() {
+  const search = $('invSearchInput') ? $('invSearchInput').value : '';
+  const status = $('invStatusFilter') ? $('invStatusFilter').value : 'All';
+  try {
+    const res = await api.getInvestigations(search, status);
+    if (res.ok) {
+      const invs = res.data.investigations;
+      const tbody = $('investigationsTableBody');
+      if (!tbody) return;
+      
+      if ($('invCountLabel')) {
+        $('invCountLabel').textContent = `${invs.length} total investigations`;
+      }
+      if ($('navInvBadge')) {
+        $('navInvBadge').textContent = invs.length;
+      }
+      
+      if (invs.length === 0) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No investigations found. Create one to begin.</td></tr>`;
+        return;
+      }
+      
+      tbody.innerHTML = invs.map(inv => `
+        <tr class="clickable-row" data-id="${inv.id}" style="cursor: pointer;">
+          <td><strong style="color: #22d3ee;">${escapeHtml(inv.investigation_uid)}</strong></td>
+          <td>${escapeHtml(inv.title)}</td>
+          <td><span class="status-pill status-${inv.status.toLowerCase().replace(/\s+/g, '-')}">${escapeHtml(inv.status)}</span></td>
+          <td style="font-size: 12px; color: #8a99ad;">${escapeHtml(inv.created_at)}</td>
+          <td><span style="background: rgba(34,211,238,0.1); color: #22d3ee; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${inv.evidence_count} files</span></td>
+          <td><span style="background: rgba(239,68,68,0.1); color: #f87171; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${inv.findings_count} findings</span></td>
+          <td>
+            <button class="btn ghost sm view-inv-btn" data-id="${inv.id}" style="padding: 4px 10px; font-size: 12px;">
+              <i data-lucide="eye" style="width:14px;height:14px;"></i> Inspect
+            </button>
+          </td>
+        </tr>
+      `).join('');
+      lucide.createIcons();
+      
+      tbody.querySelectorAll('.clickable-row, .view-inv-btn').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = el.dataset.id || el.closest('tr').dataset.id;
+          loadInvestigationDetails(id);
+        });
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    toast('error', 'Error', 'Failed to load investigations.');
+  }
+}
+
+async function loadInvestigationDetails(id) {
+  currentInvestigationId = id;
+  setLoader(true);
+  try {
+    const res = await api.getInvestigation(id);
+    setLoader(false);
+    if (res.ok) {
+      const inv = res.data.item;
+      $('detInvTitle').textContent = inv.title;
+      $('detInvUid').textContent = `UID: ${inv.investigation_uid}`;
+      $('detInvDesc').textContent = inv.description || 'No description provided.';
+      $('detInvCreated').textContent = inv.created_at;
+      $('detInvUpdated').textContent = inv.updated_at;
+      $('detInvStatusSelect').value = inv.status;
+      
+      // Evidence list
+      const evTbody = $('evidenceTableBody');
+      if (inv.evidence_files.length === 0) {
+        evTbody.innerHTML = `<tr class="empty-row"><td colspan="6">No evidence uploaded to this investigation yet.</td></tr>`;
+      } else {
+        evTbody.innerHTML = inv.evidence_files.map(ev => `
+          <tr>
+            <td>#${ev.id}</td>
+            <td><strong>${escapeHtml(ev.original_filename)}</strong></td>
+            <td>${(ev.file_size / 1024).toFixed(1)} KB</td>
+            <td><code style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #22d3ee;" title="${ev.sha256_hash}">${ev.sha256_hash.substring(0, 16)}...</code></td>
+            <td style="font-size: 12px; color: #8a99ad;">${ev.upload_timestamp}</td>
+            <td><span class="status-pill status-${ev.integrity_status && ev.integrity_status.includes('Verified') ? 'success' : 'danger'}">${escapeHtml(ev.integrity_status || 'Unknown')}</span></td>
+          </tr>
+        `).join('');
+      }
+      
+      $('invListCard').style.display = 'none';
+      $('invDetailsCard').style.display = 'block';
+      lucide.createIcons();
+    }
+  } catch (err) {
+    setLoader(false);
+    console.error(err);
+    toast('error', 'Error', 'Failed to load investigation details.');
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function bindInvestigations() {
+  const searchInput = $('invSearchInput');
+  const statusFilter = $('invStatusFilter');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => loadInvestigations());
+  }
+  if (statusFilter) {
+    statusFilter.addEventListener('change', () => loadInvestigations());
+  }
+  
+  const openModalBtn = $('openCreateInvModalBtn');
+  const modal = $('createInvModal');
+  const cancelModalBtn = $('cancelCreateInvBtn');
+  const submitModalBtn = $('submitCreateInvBtn');
+  
+  if (openModalBtn && modal) {
+    openModalBtn.addEventListener('click', () => {
+      $('newInvTitle').value = '';
+      $('newInvDesc').value = '';
+      $('newInvStatus').value = 'Open';
+      modal.classList.add('active');
+    });
+  }
+  if (cancelModalBtn && modal) {
+    cancelModalBtn.addEventListener('click', () => modal.classList.remove('active'));
+  }
+  if (submitModalBtn) {
+    submitModalBtn.addEventListener('click', async () => {
+      const title = $('newInvTitle').value.trim();
+      const description = $('newInvDesc').value.trim();
+      const status = $('newInvStatus').value;
+      if (!title) {
+        toast('error', 'Validation Error', 'Investigation title is required.');
+        return;
+      }
+      try {
+        setLoader(true);
+        const res = await api.createInvestigation({ title, description, status });
+        setLoader(false);
+        if (res.ok) {
+          modal.classList.remove('active');
+          toast('success', 'Success', 'Investigation created successfully.');
+          loadInvestigations();
+        }
+      } catch (err) {
+        setLoader(false);
+        toast('error', 'Error', err.message || 'Failed to create investigation.');
+      }
+    });
+  }
+  
+  const backBtn = $('backToInvListBtn');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      $('invDetailsCard').style.display = 'none';
+      $('invListCard').style.display = 'block';
+      currentInvestigationId = null;
+      loadInvestigations();
+    });
+  }
+  
+  const updateStatusBtn = $('updateInvStatusBtn');
+  if (updateStatusBtn) {
+    updateStatusBtn.addEventListener('click', async () => {
+      if (!currentInvestigationId) return;
+      const status = $('detInvStatusSelect').value;
+      try {
+        setLoader(true);
+        const res = await api.updateInvestigation(currentInvestigationId, { status });
+        setLoader(false);
+        if (res.ok) {
+          toast('success', 'Updated', 'Investigation status updated successfully.');
+          loadInvestigationDetails(currentInvestigationId);
+        }
+      } catch (err) {
+        setLoader(false);
+        toast('error', 'Error', err.message || 'Failed to update status.');
+      }
+    });
+  }
+  
+  const triggerUploadBtn = $('triggerEvidenceUploadBtn');
+  const fileInput = $('evidenceFileInput');
+  if (triggerUploadBtn && fileInput) {
+    triggerUploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file || !currentInvestigationId) return;
+      if (!file.name.toLowerCase().endswith('.csv')) {
+        toast('error', 'Invalid File', 'Only CSV files are supported.');
+        return;
+      }
+      try {
+        setLoader(true);
+        await api.uploadEvidence(currentInvestigationId, file);
+        setLoader(false);
+        fileInput.value = '';
+        toast('success', 'Evidence Uploaded', 'CSV evidence uploaded and SHA-256 integrity hash calculated.');
+        loadInvestigationDetails(currentInvestigationId);
+      } catch (err) {
+        setLoader(false);
+        fileInput.value = '';
+        toast('error', 'Upload Failed', err.message || 'Failed to upload evidence.');
+      }
+    });
+  }
+}
+
 
 /* ===================== DASHBOARD ===================== */
 const chartDefaults = {
@@ -693,7 +952,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bindUploader();
   bindQuickActions();
   bindTilt();
+  bindInvestigations();
   loadStats();
   loadLogs();
   loadThreats();
+  loadInvestigations();
 });

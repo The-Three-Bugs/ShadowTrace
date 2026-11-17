@@ -88,6 +88,11 @@
         <i data-lucide="file-search"></i><span>Log Analyzer</span>
         <span class="nav-glow"></span>
       </button>
+      <button class="nav-item" data-view="investigations">
+        <i data-lucide="folder-kanban"></i><span>Investigations</span>
+        <span class="badge-nav" id="navInvBadge">0</span>
+        <span class="nav-glow"></span>
+      </button>
       <button class="nav-item" data-view="threats">
         <i data-lucide="shield-alert"></i><span>Threat Detection</span>
         <span class="badge-nav" id="navThreatBadge">0</span>
@@ -366,6 +371,153 @@
         </div>
       </div>
     </section>
+
+    <!-- ================= INVESTIGATIONS ================= -->
+    <section class="view" id="view-investigations">
+      <div class="card" id="invListCard">
+        <div class="card-head">
+          <div>
+            <h3>Digital Investigations</h3>
+            <p class="card-sub" id="invCountLabel">0 active investigations</p>
+          </div>
+          <div style="display:flex; gap: 12px; align-items:center; flex-wrap:wrap;">
+            <div class="filters">
+              <div class="search">
+                <i data-lucide="search"></i>
+                <input type="text" id="invSearchInput" placeholder="Search by title or ID…" />
+              </div>
+              <select id="invStatusFilter" class="select">
+                <option value="All">All Statuses</option>
+                <option value="Open">Open</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Completed">Completed</option>
+                <option value="Archived">Archived</option>
+              </select>
+            </div>
+            <button class="btn primary" id="openCreateInvModalBtn">
+              <i data-lucide="folder-plus"></i> New Investigation
+            </button>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Investigation UID</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Evidence</th>
+                <th>Findings</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="investigationsTableBody">
+              <tr class="empty-row"><td colspan="7">No investigations found. Create one to begin.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Investigation Details Card / Panel (Hidden by default) -->
+      <div class="card" id="invDetailsCard" style="display:none; margin-top: 20px;">
+        <div class="card-head">
+          <div>
+            <button class="btn ghost" id="backToInvListBtn" style="margin-bottom: 12px; padding: 6px 12px; font-size: 13px;">
+              <i data-lucide="arrow-left" style="width:14px;height:14px;"></i> Back to Investigations
+            </button>
+            <h3 id="detInvTitle">Investigation Details</h3>
+            <p class="card-sub" id="detInvUid">UID: INV-0000</p>
+          </div>
+          <div style="display:flex; gap: 10px; align-items:center;">
+            <select id="detInvStatusSelect" class="select">
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Archived">Archived</option>
+            </select>
+            <button class="btn primary" id="updateInvStatusBtn">Update Status</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+          <div style="background: rgba(255,255,255,0.02); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+            <div style="font-size: 12px; color: #8a99ad; margin-bottom: 4px;">DESCRIPTION</div>
+            <div id="detInvDesc" style="font-size: 14px; color: #f1f5ff;">No description provided.</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.02); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 12px; color: #8a99ad; margin-bottom: 4px;">TIMESTAMPS</div>
+              <div style="font-size: 13px; color: #c3cbe4;">Created: <span id="detInvCreated">-</span></div>
+              <div style="font-size: 13px; color: #c3cbe4; margin-top: 4px;">Updated: <span id="detInvUpdated">-</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Evidence Section -->
+        <div style="margin-top: 24px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div>
+              <h4 style="font-size: 16px; color: #f1f5ff; font-weight: 600;">Associated Evidence & SHA-256 Verification</h4>
+              <p style="font-size: 13px; color: #8a99ad;">Upload CSV logs and verify cryptographic file integrity.</p>
+            </div>
+            <div>
+              <input type="file" id="evidenceFileInput" accept=".csv" style="display: none;" />
+              <button class="btn primary" id="triggerEvidenceUploadBtn">
+                <i data-lucide="upload"></i> Upload CSV Evidence
+              </button>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Evidence ID</th>
+                  <th>Original Filename</th>
+                  <th>File Size</th>
+                  <th>SHA-256 Hash</th>
+                  <th>Uploaded At</th>
+                  <th>Integrity Status</th>
+                </tr>
+              </thead>
+              <tbody id="evidenceTableBody">
+                <tr class="empty-row"><td colspan="6">No evidence uploaded to this investigation yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Create Investigation Modal -->
+    <div class="loader-overlay" id="createInvModal" style="background: rgba(5,8,18,0.85); backdrop-filter: blur(6px);">
+      <div style="background: #0f172a; border: 1px solid rgba(34,211,238,0.3); border-radius: 12px; padding: 28px; width: 440px; max-width: 90%; box-shadow: 0 0 30px rgba(34,211,238,0.2);">
+        <h3 style="color: #f1f5ff; margin-bottom: 16px; font-size: 18px;">Create New Investigation</h3>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 12px; color: #8a99ad; margin-bottom: 6px;">Investigation Title *</label>
+          <input type="text" id="newInvTitle" class="select" style="width: 100%; background: #0a0f1e; border: 1px solid rgba(255,255,255,0.1); color: #f1f5ff; padding: 10px 12px; border-radius: 6px;" placeholder="e.g., Suspicious Login Investigation" />
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 12px; color: #8a99ad; margin-bottom: 6px;">Description (Optional)</label>
+          <textarea id="newInvDesc" rows="3" style="width: 100%; background: #0a0f1e; border: 1px solid rgba(255,255,255,0.1); color: #f1f5ff; padding: 10px 12px; border-radius: 6px; font-family: 'Inter', sans-serif;" placeholder="Brief summary of the incident or case..."></textarea>
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; font-size: 12px; color: #8a99ad; margin-bottom: 6px;">Initial Status</label>
+          <select id="newInvStatus" class="select" style="width: 100%; background: #0a0f1e; border: 1px solid rgba(255,255,255,0.1); color: #f1f5ff; padding: 10px 12px; border-radius: 6px;">
+            <option value="Open">Open</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="Archived">Archived</option>
+          </select>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn ghost" id="cancelCreateInvBtn">Cancel</button>
+          <button class="btn primary" id="submitCreateInvBtn">Create Investigation</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ================= THREATS ================= -->
     <section class="view" id="view-threats">

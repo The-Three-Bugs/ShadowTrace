@@ -13,17 +13,50 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Enable foreign keys
+    cursor.execute('PRAGMA foreign_keys = ON;')
+    
+    # Investigations table (Member 1)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS investigations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_uid TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'Open',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Evidence files table (Member 1)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS evidence_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            sha256_hash TEXT NOT NULL,
+            upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            processing_status TEXT DEFAULT 'Uploaded',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+        )
+    ''')
+    
     # Analysis runs table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analysis_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER,
             filename TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             total_records INTEGER DEFAULT 0,
             valid_records INTEGER DEFAULT 0,
             invalid_records INTEGER DEFAULT 0,
             suspicious_count INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'Completed'
+            status TEXT DEFAULT 'Completed',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL
         )
     ''')
     
