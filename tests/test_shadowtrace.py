@@ -121,5 +121,81 @@ class TestShadowTrace(unittest.TestCase):
         res_ev_404 = client.get('/api/evidence/99999')
         self.assertEqual(res_ev_404.status_code, 404)
 
+    def test_authentication_and_authorization(self):
+        from app import app
+        client = app.test_client()
+
+        # 1. Test unauthenticated access to protected route
+        res_unauth = client.get('/api/auth/me')
+        self.assertEqual(res_unauth.status_code, 401)
+        self.assertFalse(res_unauth.get_json()['ok'])
+
+        # 2. Test invalid login credentials
+        res_bad_login = client.post('/api/auth/login', json={'username': 'admin', 'password': 'WrongPassword123!'})
+        self.assertEqual(res_bad_login.status_code, 401)
+        self.assertFalse(res_bad_login.get_json()['ok'])
+        # Ensure generic error message doesn't reveal user existence details
+        self.assertIn('Invalid username or password', res_bad_login.get_json()['error']['message'])
+
+        # 3. Test valid login
+        res_login = client.post('/api/auth/login', json={'username': 'admin', 'password': 'AdminSecret123!'})
+        self.assertEqual(res_login.status_code, 200)
+        login_data = res_login.get_json()
+        self.assertTrue(login_data['ok'])
+        self.assertEqual(login_data['data']['user']['username'], 'admin')
+        self.assertEqual(login_data['data']['user']['role'], 'Administrator')
+
+        # 4. Test /api/auth/me after login
+        res_me = client.get('/api/auth/me')
+        self.assertEqual(res_me.status_code, 200)
+        self.assertEqual(res_me.get_json()['data']['user']['username'], 'admin')
+
+        # 5. Test logout
+        res_logout = client.post('/api/auth/logout')
+        self.assertEqual(res_logout.status_code, 200)
+        self.assertTrue(res_logout.get_json()['ok'])
+
+        # Verify session cleared
+        res_me_after = client.get('/api/auth/me')
+        self.assertEqual(res_me_after.status_code, 401)
+
+        # 6. Test login throttling after 5 failed attempts
+        for _ in range(5):
+            client.post('/api/auth/login', json={'username': 'analyst', 'password': 'BadPassword'})
+        
+        res_throttle = client.post('/api/auth/login', json={'username': 'analyst', 'password': 'BadPassword'})
+        self.assertEqual(res_throttle.status_code, 429)
+        self.assertEqual(res_throttle.get_json()['error']['code'], 'TOO_MANY_REQUESTS')
+
+    def test_password_policy_and_change(self):
+        from app import app
+        client = app.test_client()
+
+        # 1. Login as viewer
+        client.post('/api/auth/login', json={'username': 'viewer', 'password': 'ViewerPass123!'})
+
+        # 2. Test weak password rejection (< 8 chars)
+        res_weak = client.post('/api/auth/change-password', json={'current_password': 'ViewerPass123!', 'new_password': 'short'})
+        self.assertEqual(res_weak.status_code, 400)
+        self.assertEqual(res_weak.get_json()['error']['code'], 'WEAK_PASSWORD')
+
+        # 3. Test incorrect current password rejection
+        res_bad_curr = client.post('/api/auth/change-password', json={'current_password': 'WrongPassword!', 'new_password': 'NewSecurePass123!'})
+        self.assertEqual(res_bad_curr.status_code, 401)
+
+        # 4. Test successful password change and session invalidation
+        res_change = client.post('/api/auth/change-password', json={'current_password': 'ViewerPass123!', 'new_password': 'NewSecurePass123!'})
+        self.assertEqual(res_change.status_code, 200)
+        self.assertTrue(res_change.get_json()['ok'])
+
+        # Verify session was invalidated (requires re-login)
+        res_me = client.get('/api/auth/me')
+        self.assertEqual(res_me.status_code, 401)
+
+        # 5. Verify login works with new password
+        res_login_new = client.post('/api/auth/login', json={'username': 'viewer', 'password': 'NewSecurePass123!'})
+        self.assertEqual(res_login_new.status_code, 200)
+        self.assertTrue(res_login_new.get_json()['ok'])
+
 if __name__ == '__main__':
     unittest.main()

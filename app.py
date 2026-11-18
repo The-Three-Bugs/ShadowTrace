@@ -1,9 +1,13 @@
 import os
 import hashlib
 import uuid
+import secrets
+import time
+from functools import wraps
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, Response
+from flask import Flask, render_template, request, jsonify, send_file, Response, session
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from database import init_db, get_db_connection
 from csv_processor import process_csv_content
 from detector import analyze_records
@@ -11,11 +15,85 @@ from detector import analyze_records
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16MB max upload
 
+# Secure Session Configuration & Environment Variable Validation
+app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+if not app.secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError("CRITICAL: FLASK_SECRET_KEY environment variable is missing in production!")
+    app.secret_key = secrets.token_hex(32)
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=False # Set to True in production HTTPS deployment
+)
+
 EVIDENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'evidence')
 os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
 # Initialize DB on startup
 init_db()
+
+# Login throttling store
+login_attempts_store = {}
+
+def check_throttle(key):
+    now = time.time()
+    record = login_attempts_store.get(key)
+    if record and record['lockout_until'] > now:
+        return False, int(record['lockout_until'] - now)
+    return True, 0
+
+def record_failed_attempt(key):
+    now = time.time()
+    record = login_attempts_store.get(key, {'count': 0, 'lockout_until': 0})
+    record['count'] += 1
+    if record['count'] >= 5:
+        record['lockout_until'] = now + 60
+    login_attempts_store[key] = record
+
+def clear_throttle(key):
+    if key in login_attempts_store:
+        del login_attempts_store[key]
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_id'):
+            return jsonify({
+                'ok': False,
+                'error': {
+                    'code': 'UNAUTHENTICATED',
+                    'message': 'Authentication required. Please log in.'
+                }
+            }), 401
+        return f(*args, **kwargs)
+    return decorated
+
+def role_required(allowed_roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not session.get('user_id'):
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'UNAUTHENTICATED',
+                        'message': 'Authentication required. Please log in.'
+                    }
+                }), 401
+            user_role = session.get('role')
+            if user_role not in allowed_roles:
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'FORBIDDEN',
+                        'message': 'You do not have permission to perform this action.'
+                    }
+                }), 403
+            return f(*args, **kwargs)
+        return decorator
+    return decorator
 
 def calculate_sha256_from_stream(stream):
     hasher = hashlib.sha256()
@@ -36,6 +114,155 @@ def calculate_sha256_file(filepath):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    data = request.get_json(silent=True) or request.form
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    client_ip = request.remote_addr or 'unknown'
+    throttle_key = f"{client_ip}_{username}"
+    
+    allowed, retry_in = check_throttle(throttle_key)
+    if not allowed:
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'TOO_MANY_REQUESTS',
+                'message': f'Too many failed login attempts. Please try again in {retry_in} seconds.'
+            }
+        }), 429
+        
+    if not username or not password:
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'INVALID_REQUEST',
+                'message': 'Username and password are required.'
+            }
+        }), 400
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user or not check_password_hash(user['password_hash'], password):
+        record_failed_attempt(throttle_key)
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'INVALID_CREDENTIALS',
+                'message': 'Invalid username or password.'
+            }
+        }), 401
+        
+    clear_throttle(throttle_key)
+    
+    # Session security: clear and regenerate session identifier
+    session.clear()
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+    
+    return jsonify({
+        'ok': True,
+        'data': {
+            'user': {
+                'id': user['id'],
+                'username': user['username'],
+                'role': user['role']
+            }
+        }
+    })
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    session.clear()
+    return jsonify({
+        'ok': True,
+        'data': {
+            'message': 'Logged out successfully.'
+        }
+    })
+
+def validate_password_policy(password):
+    if not password or len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+    return True, ""
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@login_required
+def api_change_password():
+    data = request.get_json(silent=True) or request.form
+    current_password = data.get('current_password', '').strip()
+    new_password = data.get('new_password', '').strip()
+    
+    if not current_password or not new_password:
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'INVALID_REQUEST',
+                'message': 'Current password and new password are required.'
+            }
+        }), 400
+        
+    valid_policy, policy_msg = validate_password_policy(new_password)
+    if not valid_policy:
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'WEAK_PASSWORD',
+                'message': policy_msg
+            }
+        }), 400
+        
+    user_id = session.get('user_id')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user or not check_password_hash(user['password_hash'], current_password):
+        conn.close()
+        return jsonify({
+            'ok': False,
+            'error': {
+                'code': 'INVALID_CREDENTIALS',
+                'message': 'Current password is incorrect.'
+            }
+        }), 401
+        
+    new_hash = generate_password_hash(new_password)
+    cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_hash, user_id))
+    conn.commit()
+    conn.close()
+    
+    # Invalidate session after password change for security
+    session.clear()
+    
+    return jsonify({
+        'ok': True,
+        'data': {
+            'message': 'Password changed successfully. Please log in again with your new password.'
+        }
+    })
+
+@app.route('/api/auth/me', methods=['GET'])
+@login_required
+def api_me():
+    return jsonify({
+        'ok': True,
+        'data': {
+            'user': {
+                'id': session.get('user_id'),
+                'username': session.get('username'),
+                'role': session.get('role')
+            }
+        }
+    })
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():

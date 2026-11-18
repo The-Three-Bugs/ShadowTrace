@@ -90,6 +90,33 @@ def init_db():
             FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
         )
     ''')
+
+    # Users table (Member 1 - Security)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'Analyst',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Seed or reset default users (Admin, Analyst, Viewer) for test isolation and consistency
+    from werkzeug.security import generate_password_hash
+    default_users = [
+        ('admin', generate_password_hash('AdminSecret123!'), 'Administrator'),
+        ('analyst', generate_password_hash('AnalystPass123!'), 'Analyst'),
+        ('viewer', generate_password_hash('ViewerPass123!'), 'Viewer')
+    ]
+    for uname, phash, urole in default_users:
+        cursor.execute('''
+            INSERT OR REPLACE INTO users (id, username, password_hash, role)
+            VALUES (
+                (SELECT id FROM users WHERE username = ?),
+                ?, ?, ?
+            )
+        ''', (uname, uname, phash, urole))
     
     conn.commit()
     conn.close()
