@@ -13,17 +13,70 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Investigations table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS investigations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            case_reference TEXT,
+            notes TEXT,
+            status TEXT DEFAULT 'Open',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Evidence files table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS evidence_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER,
+            original_name TEXT NOT NULL,
+            stored_name TEXT NOT NULL,
+            sha256 TEXT,
+            size_bytes INTEGER DEFAULT 0,
+            imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            total_rows INTEGER DEFAULT 0,
+            valid_rows INTEGER DEFAULT 0,
+            invalid_rows INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'Pending',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id)
+        )
+    ''')
+
     # Analysis runs table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analysis_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER,
+            evidence_id INTEGER,
             filename TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             total_records INTEGER DEFAULT 0,
             valid_records INTEGER DEFAULT 0,
             invalid_records INTEGER DEFAULT 0,
             suspicious_count INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'Completed'
+            status TEXT DEFAULT 'Completed',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id)
+        )
+    ''')
+
+    # Processing runs table (Member 2 requirement)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processing_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER,
+            evidence_id INTEGER,
+            total_rows INTEGER DEFAULT 0,
+            valid_rows INTEGER DEFAULT 0,
+            invalid_rows INTEGER DEFAULT 0,
+            duplicate_rows INTEGER DEFAULT 0,
+            processing_status TEXT DEFAULT 'Pending',
+            started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            error_summary TEXT,
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id)
         )
     ''')
     
@@ -32,14 +85,20 @@ def init_db():
         CREATE TABLE IF NOT EXISTS log_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id INTEGER,
+            investigation_id INTEGER,
+            evidence_id INTEGER,
+            source_row_number INTEGER,
             timestamp TEXT,
+            normalized_timestamp TEXT,
             source_ip TEXT,
             event_type TEXT,
             username TEXT,
             status TEXT,
             severity TEXT DEFAULT 'Low',
             detection_reason TEXT,
-            FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
+            FOREIGN KEY (run_id) REFERENCES analysis_runs(id),
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id)
         )
     ''')
     
