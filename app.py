@@ -92,7 +92,7 @@ def role_required(allowed_roles):
                     }
                 }), 403
             return f(*args, **kwargs)
-        return decorator
+        return decorated
     return decorator
 
 def calculate_sha256_from_stream(stream):
@@ -161,8 +161,8 @@ def api_login():
         
     clear_throttle(throttle_key)
     
-    # Session security: clear and regenerate session identifier
-    session.clear()
+    # Session security: regenerate session
+    session.regenerate = True if hasattr(session, 'regenerate') else None
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['role'] = user['role']
@@ -543,6 +543,7 @@ def load_sample():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/investigations', methods=['GET'])
+@login_required
 def get_investigations():
     search = request.args.get('search', '').strip()
     status = request.args.get('status', '').strip()
@@ -592,11 +593,13 @@ def get_investigations():
     })
 
 @app.route('/api/investigations', methods=['POST'])
+@role_required(['Administrator', 'Analyst'])
 def create_investigation():
     data = request.get_json(silent=True) or request.form
     title = data.get('title', '').strip()
     description = data.get('description', '').strip()
     status = data.get('status', 'Open').strip()
+    user_id = session.get('user_id')
     
     if not title:
         return jsonify({
@@ -617,9 +620,9 @@ def create_investigation():
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT INTO investigations (investigation_uid, title, description, status)
-            VALUES (?, ?, ?, ?)
-        ''', (investigation_uid, title, description, status))
+            INSERT INTO investigations (investigation_uid, title, description, status, user_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (investigation_uid, title, description, status, user_id))
         conn.commit()
         inv_id = cursor.lastrowid
         
@@ -646,6 +649,7 @@ def create_investigation():
         }), 500
 
 @app.route('/api/investigations/<int:id>', methods=['GET'])
+@login_required
 def get_investigation_details(id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -691,6 +695,7 @@ def get_investigation_details(id):
     })
 
 @app.route('/api/investigations/<int:id>', methods=['PUT', 'PATCH'])
+@role_required(['Administrator', 'Analyst'])
 def update_investigation(id):
     data = request.get_json(silent=True) or request.form
     title = data.get('title', '').strip()
@@ -746,6 +751,7 @@ def update_investigation(id):
     })
 
 @app.route('/api/investigations/<int:id>/evidence', methods=['POST'])
+@role_required(['Administrator', 'Analyst'])
 def upload_investigation_evidence(id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -859,6 +865,7 @@ def upload_investigation_evidence(id):
         }), 500
 
 @app.route('/api/investigations/<int:id>/evidence', methods=['GET'])
+@login_required
 def get_investigation_evidence(id):
     conn = get_db_connection()
     cursor = conn.cursor()

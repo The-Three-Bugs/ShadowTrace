@@ -24,10 +24,21 @@ def init_db():
             title TEXT NOT NULL,
             description TEXT,
             status TEXT DEFAULT 'Open',
+            user_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )
     ''')
+    
+    # Migration: ensure user_id column exists if table was created previously without it
+    cursor.execute("PRAGMA table_info(investigations)")
+    columns = [col['name'] for col in cursor.fetchall()]
+    if 'user_id' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN user_id INTEGER;")
+        except Exception:
+            pass
     
     # Evidence files table (Member 1)
     cursor.execute('''
@@ -110,13 +121,12 @@ def init_db():
         ('viewer', generate_password_hash('ViewerPass123!'), 'Viewer')
     ]
     for uname, phash, urole in default_users:
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (id, username, password_hash, role)
-            VALUES (
-                (SELECT id FROM users WHERE username = ?),
-                ?, ?, ?
-            )
-        ''', (uname, uname, phash, urole))
+        cursor.execute('SELECT id FROM users WHERE username = ?', (uname,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', (phash, urole, uname))
+        else:
+            cursor.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', (uname, phash, urole))
     
     conn.commit()
     conn.close()

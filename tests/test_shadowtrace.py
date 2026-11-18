@@ -11,6 +11,8 @@ from detector import analyze_records
 class TestShadowTrace(unittest.TestCase):
     def setUp(self):
         init_db()
+        from app import login_attempts_store
+        login_attempts_store.clear()
 
     def test_csv_processor(self):
         sample_csv = "timestamp,source_ip,event_type,username,status\n2026-10-14 10:00:00,192.168.1.100,login_attempt,alice,success\n"
@@ -37,6 +39,9 @@ class TestShadowTrace(unittest.TestCase):
         from app import app
         client = app.test_client()
         
+        # Log in as analyst for investigation/evidence operations
+        client.post('/api/auth/login', json={'username': 'analyst', 'password': 'AnalystPass123!'})
+
         # 1. Test missing title validation on investigation creation
         res_err = client.post('/api/investigations', json={'title': ''})
         self.assertEqual(res_err.status_code, 400)
@@ -196,6 +201,40 @@ class TestShadowTrace(unittest.TestCase):
         res_login_new = client.post('/api/auth/login', json={'username': 'viewer', 'password': 'NewSecurePass123!'})
         self.assertEqual(res_login_new.status_code, 200)
         self.assertTrue(res_login_new.get_json()['ok'])
+
+    def test_authorization_roles_and_idor(self):
+        from app import app
+        import io
+        client = app.test_client()
+
+        # 1. Login as Viewer (read-only role)
+        client.post('/api/auth/login', json={'username': 'viewer', 'password': 'ViewerPass123!'})
+
+        # 2. Viewer attempts restricted action: Create investigation (should be 403 Forbidden)
+        res_viewer_create = client.post('/api/investigations', json={'title': 'Viewer Breach', 'description': 'Unauthorized create'})
+        self.assertEqual(res_viewer_create.status_code, 403)
+        self.assertEqual(res_viewer_create.get_json()['error']['code'], 'FORBIDDEN')
+
+        # 3. Logout Viewer and login as Analyst
+        client.post('/api/auth/logout')
+        client.post('/api/auth/login', json={'username': 'analyst', 'password': 'AnalystPass123!'})
+
+        # 4. Analyst creates investigation successfully (201 Created)
+        res_analyst_create = client.post('/api/investigations', json={'title': 'Analyst Incident', 'description': 'Authorized create'})
+        self.assertEqual(res_analyst_create.status_code, 201)
+        inv_id = res_analyst_create.get_json()['data']['item']['id']
+
+        # 5. Analyst uploads evidence
+        csv_data = b"timestamp,source_ip,event_type,username,status\n2026-10-14 12:00:00,10.0.0.1,login_type,user1,success\n"
+        evidence_file = {'file': (io.BytesIO(csv_data), 'analyst_evidence.csv')}
+        res_upload = client.post(f'/api/investigations/{inv_id}/evidence', data=evidence_file, content_type='multipart/form-data')
+        self.assertEqual(res_upload.status_code, 201)
+        ev_id = res_upload.get_json()['data']['item']['id']
+
+        # 6. Verify evidence details and parent-child IDOR verification
+        res_ev = client.get(f'/api/evidence/{ev_id}')
+        self.assertEqual(res_ev.status_code, 200)
+        self.assertEqual(res_ev.get_json()['data']['item']['investigation_id'], inv_id)
 
 if __name__ == '__main__':
     unittest.main()
