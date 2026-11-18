@@ -96,3 +96,50 @@
 - **Issue 2:** Werkzeug `FileStorage.save()` stream position behavior in test client uploads.
   - *Resolution:* Implemented direct binary file writing (`f_out.write(content_bytes)`) in `app.py` during evidence upload.
 
+---
+
+## Part 3: API Requirements, Event Explorer & Timeline Implementation (Phase 3)
+
+### Objectives
+- Implement and verify Member 2's assigned API requirements and endpoints (`/api/evidence/<id>/process`, `/api/evidence/<id>/processing-summary`, `/api/investigations/<id>/events`, `/api/events/<event_id>`).
+- Finalize support for event search, multi-field filtering, chronological sorting (`oldest` / `newest`), and pagination.
+- Ensure strict compliance with `RULES.md` and `ARCHITECTURE.md` (parameterized SQL queries, uniform JSON response contracts, immutable original evidence preservation).
+- Validate all features through comprehensive unit and integration tests.
+
+### Actual Work Completed
+1. **Evidence Processing Endpoint (`POST /api/evidence/<id>/process`)**:
+   - Integrated evidence file lookup with investigation foreign key association.
+   - Invoked CSV validation and normalization logic to parse required headers (`timestamp`, `username`, `source_ip`, `event_type`, `status`).
+   - Parsed and normalized timestamps into ISO-8601 UTC format.
+   - Logged processing runs and saved normalized events with source row number and evidence references in SQLite.
+2. **Processing Summary Endpoint (`GET /api/evidence/<id>/processing-summary`)**:
+   - Implemented summary retrieval providing metrics for total rows, valid rows, invalid rows, duplicate rows, processing status, and error details.
+3. **Event Explorer & Chronological Timeline Endpoint (`GET /api/investigations/<id>/events`)**:
+   - Implemented dynamic query filtering supporting `username`, `source_ip`, `event_type`, `status`, `evidence_id`, and `start_date`/`end_date` date ranges.
+   - Implemented chronological sorting (`sort=oldest` and `sort=newest`) using normalized timestamps.
+   - Added server-side pagination (`page` and `per_page`).
+4. **Event Detail Endpoint (`GET /api/events/<id>')**:
+   - Implemented secure retrieval of individual normalized event records with full traceability back to the source CSV row and evidence ID.
+
+### Files Created or Modified
+- **`app.py`**: Added and refined Member 2 REST API endpoints (`/api/evidence/<id>/process`, `/api/evidence/<id>/processing-summary`, `/api/investigations/<id>/events`, `/api/events/<event_id>`) adhering to standardized response structures (`{"ok": true, "data": ...}`).
+- **`database.py`**: Maintained schema support for `processing_runs`, `evidence_files`, and `log_events` with foreign key relationships and index structures.
+- **`csv_processor.py`**: Handled robust CSV parsing, column normalization, timestamp parsing, and duplicate/invalid row separation.
+- **`tests/test_shadowtrace.py`**: Added comprehensive test cases covering timestamp normalization, CSV parsing validation, API evidence processing, and event filtering/sorting.
+
+### Implementation Details
+- **Security & SQL Safety**: All database operations utilize parameterized queries (`?`) to prevent SQL injection.
+- **Error Handling**: Standardized error responses (`{"ok": false, "error": {"code": "...", "message": "..."}}`) with appropriate HTTP status codes (`400`, `404`, etc.).
+- **Evidence Integrity**: Original uploaded evidence files remain unmutated on disk while normalized events are stored separately with source row metadata.
+
+### Testing Performed and Results
+- Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **6 tests passed successfully in 0.932s (`OK`)**.
+- Verified end-to-end investigation creation, evidence upload, evidence processing, processing summary retrieval, event filtering, chronological sorting, and event detail lookup.
+
+### Issues Resolved
+- **Issue 1**: Inconsistent filtering across mixed timestamp formats.
+  - *Resolution*: Leveraged SQLite `COALESCE(normalized_timestamp, timestamp)` expressions in query clauses to ensure reliable sorting and date-range filtering.
+- **Issue 2**: Unbounded query performance.
+  - *Resolution*: Implemented server-side pagination with default `per_page=50` limits on event exploration endpoints.
+
