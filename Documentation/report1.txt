@@ -1,0 +1,55 @@
+================================================================================
+SHADOWTRACE — MEMBER 1 COMPLETION REPORT
+Assigned Modules:
+1. Investigation Management
+2. Evidence Upload & Integrity Verification (SHA-256)
+================================================================================
+
+1. EXECUTIVE SUMMARY & OVERVIEW
+--------------------------------------------------------------------------------
+Member 1 is responsible for establishing the core foundation of ShadowTrace:
+- Investigation Management: Containerizing incidents, evidence, processed events, and findings.
+- Evidence Upload & Integrity Verification: Securely ingesting CSV security logs, preserving original file bytes, calculating SHA-256 hashes, and performing cryptographic integrity verification.
+
+All development tasks (Tasks 1-7), API endpoints, frontend interfaces, and rigorous unit/integration test suites have been fully implemented, integrated, and verified without errors.
+
+
+2. SUMMARY OF PHASES & DEVELOPMENT TASKS (1 TO 7)
+--------------------------------------------------------------------------------
+- Task 1 (Repository Inspection): Inspected the Flask entry point (`app.py`), database setup (`database.py`), existing routes, CSV parser, and frontend asset structure.
+- Task 2 (Investigation Management Backend): Implemented REST endpoints for creating, listing, searching, filtering, and updating investigations with unique UIDs and status validation (`Open`, `In Progress`, `Completed`, `Archived`).
+- Task 3 (Investigation Management Frontend): Integrated investigation listing, creation modals, detail panels, and status selectors into the existing ShadowTrace UI.
+- Task 4 (Evidence Upload Backend): Implemented CSV upload endpoints tied to specific investigations, enforcing file size limits (16MB), extension checks (.csv), empty file rejection, duplicate upload prevention (409 Conflict), and safe storage with generated UUID filenames.
+- Task 5 (Integrity Verification): Implemented SHA-256 hash recalculation from stored original evidence files on disk, comparing them against recorded database hashes and returning clear verification results (`Integrity Verified`, `Integrity Mismatch`, `Verification Failed (File Missing)`).
+- Task 6 (Evidence Frontend): Connected CSV file uploads and evidence metadata/integrity inspection tables to the frontend investigation details view.
+- Task 7 (Integration & Testing): Created and executed comprehensive unit and integration test suites (`tests/test_shadowtrace.py`) validating successful and failure scenarios across all Member 1 modules.
+
+
+3. DETAILED ARCHITECTURE & APP WORKFLOW (HOW IT WORKS)
+--------------------------------------------------------------------------------
+
+A. Investigation Lifecycle & Management
+- Containerization: Every incident begins with an Investigation. An investigation holds metadata (`id`, `investigation_uid`, `title`, `description`, `status`, `created_at`, `updated_at`).
+- UID Generation: Automatically generated unique identifier format (e.g., `INV-20261117-A1B2C3`).
+- Search & Filtering: Users can search by title or UID and filter by status (`Open`, `In Progress`, `Completed`, `Archived`). Archiving preserves historical evidence without permanent deletion.
+
+B. Secure Evidence Upload Workflow
+- Association: Users select an active investigation and trigger a CSV evidence upload.
+- Validation: The Flask backend (`POST /api/investigations/<id>/evidence`) verifies that the investigation exists, checks the `.csv` extension, confirms the file is non-empty, and enforces size limits.
+- SHA-256 Hashing: Before any parsing or normalization, the system reads the original file stream bytes and computes a cryptographic SHA-256 checksum.
+- Duplicate Detection: Checks existing records in SQLite to prevent duplicate uploads of identical evidence files (`409 Conflict`).
+- Secure Storage: Generates a safe internal filename (`uuid_originalfilename.csv`) and stores the file in `instance/evidence/`, completely outside the public frontend directory.
+- Metadata Persistence: Records evidence metadata (`investigation_id`, `original_filename`, `stored_filename`, `file_size`, `sha256_hash`, `upload_timestamp`, `processing_status`) in SQLite.
+
+C. Cryptographic Integrity Verification Workflow
+- Inspection: When viewing evidence details (`GET /api/evidence/<id>` or listing evidence for an investigation), the system locates the stored file on disk.
+- Recalculation & Comparison: The system recalculates the SHA-256 hash of the stored file bytes and compares it with the recorded hash.
+- Verification Statuses:
+  1. `Integrity Verified`: Hash matches the recorded reference.
+  2. `Integrity Mismatch`: File bytes on disk have been altered or tampered with.
+  3. `Verification Failed (File Missing)`: The underlying evidence file is missing from storage.
+
+D. API & Frontend Integration
+- All interactions communicate via REST API endpoints (`/api/investigations`, `/api/investigations/<id>`, `/api/investigations/<id>/evidence`, `/api/evidence/<id>`).
+- The Vanilla JavaScript frontend (`static/js/app.js`) renders responsive tables, modals, badges, and notification toasts while strictly respecting existing design conventions and CSS frameworks.
+- Automated tests (`python -m unittest tests/test_shadowtrace.py`) verify the complete lifecycle successfully.

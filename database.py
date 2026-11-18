@@ -13,21 +13,80 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Investigations table
+    # Enable foreign keys
+    cursor.execute('PRAGMA foreign_keys = ON;')
+    
+    # Users table (Member 1)
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS investigations (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'Analyst',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # Ensure default investigation exists
+
+    # Seed or reset default users (Admin, Analyst, Viewer)
+    from werkzeug.security import generate_password_hash
+    default_users = [
+        ('admin', generate_password_hash('AdminSecret123!'), 'Administrator'),
+        ('analyst', generate_password_hash('AnalystPass123!'), 'Analyst'),
+        ('viewer', generate_password_hash('ViewerPass123!'), 'Viewer')
+    ]
+    for uname, phash, urole in default_users:
+        cursor.execute('SELECT id FROM users WHERE username = ?', (uname,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', (phash, urole, uname))
+        else:
+            cursor.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', (uname, phash, urole))
+
+    # Investigations table (Member 1)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS investigations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_uid TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'Open',
+            user_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+    ''')
+
+    # Migration: ensure user_id column exists if table was created previously without it
+    cursor.execute("PRAGMA table_info(investigations)")
+    columns = [col['name'] for col in cursor.fetchall()]
+    if 'user_id' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN user_id INTEGER;")
+        except Exception:
+            pass
+
+    # Ensure default investigation (id = 1) exists for fallback/sample/upload operations
     cursor.execute('SELECT COUNT(*) FROM investigations')
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO investigations (name) VALUES ('Default Investigation')")
-    
-    # Analysis runs table
+        cursor.execute("INSERT INTO investigations (investigation_uid, title, description, status) VALUES ('INV-20261014-DEFAULT', 'Default Investigation', 'Default system investigation', 'Open')")
+
+    # Evidence files table (Member 1)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS evidence_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            sha256_hash TEXT NOT NULL,
+            upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            processing_status TEXT DEFAULT 'Uploaded',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+        )
+    ''')
+
+    # Analysis runs table (Member 3 & 1)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analysis_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,18 +98,19 @@ def init_db():
             invalid_records INTEGER DEFAULT 0,
             suspicious_count INTEGER DEFAULT 0,
             rules_evaluated INTEGER DEFAULT 3,
-            status TEXT DEFAULT 'Completed'
+            status TEXT DEFAULT 'Completed',
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL
         )
     ''')
-    
+
     # Check and migrate columns in analysis_runs if table already existed
     cursor.execute("PRAGMA table_info(analysis_runs)")
-    columns = [col['name'] for col in cursor.fetchall()]
-    if 'investigation_id' not in columns:
+    run_columns = [col['name'] for col in cursor.fetchall()]
+    if 'investigation_id' not in run_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN investigation_id INTEGER DEFAULT 1")
-    if 'rules_evaluated' not in columns:
+    if 'rules_evaluated' not in run_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN rules_evaluated INTEGER DEFAULT 3")
-    
+
     # Log events table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS log_events (
@@ -66,8 +126,8 @@ def init_db():
             FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
         )
     ''')
-    
-    # Detections / Threats table (legacy compatibility)
+
+    # Detections / Threats table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS detections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +141,7 @@ def init_db():
             FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
         )
     ''')
-    
+
     # Findings table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS findings (
@@ -95,21 +155,22 @@ def init_db():
             status TEXT DEFAULT 'New',
             detected_at TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (analysis_run_id) REFERENCES analysis_runs(id)
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE,
+            FOREIGN KEY (analysis_run_id) REFERENCES analysis_runs(id) ON DELETE SET NULL
         )
     ''')
-    
+
     # Finding events relationship table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS finding_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             finding_id INTEGER,
             event_id INTEGER,
-            FOREIGN KEY (finding_id) REFERENCES findings(id),
-            FOREIGN KEY (event_id) REFERENCES log_events(id)
+            FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE,
+            FOREIGN KEY (event_id) REFERENCES log_events(id) ON DELETE CASCADE
         )
     ''')
-    
+
     # Finding notes table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS finding_notes (
@@ -117,11 +178,11 @@ def init_db():
             finding_id INTEGER,
             note_text TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (finding_id) REFERENCES findings(id)
+            FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE
         )
     ''')
 
-    # Security audit logs table (Security-3 PRD §10)
+    # Security audit logs table (Member 3 Security-3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS security_audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +193,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     conn.commit()
     conn.close()
 
