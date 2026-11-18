@@ -110,5 +110,12 @@ class TestShadowTrace(unittest.TestCase):
         self.assertTrue(analyze_data['ok'])
         self.assertEqual(analyze_data['data']['investigation_id'], 1)
 
+    def test_security_headers(self):
+        res = self.client.get('/api/stats')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get('X-Content-Type-Options'), 'nosniff')
+        self.assertEqual(res.headers.get('X-Frame-Options'), 'SAMEORIGIN')
+        self.assertEqual(res.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin')
+
 if __name__ == '__main__':
     unittest.main()
