@@ -125,5 +125,12 @@ class TestShadowTraceMember2(unittest.TestCase):
         self.assertTrue(res['suspicious_count'] > 0)
         self.assertTrue(any('Rule 1' in d['rule_triggered'] for d in res['detections']))
 
+    def test_invalid_json_payload(self):
+        res = self.app.post('/api/investigations', data="incomplete-json-", content_type="application/json")
+        self.assertEqual(res.status_code, 400)
+        data = json.loads(res.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error']['code'], 'INVALID_JSON')
+
 if __name__ == '__main__':
     unittest.main()

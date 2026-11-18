@@ -143,3 +143,42 @@
 - **Issue 2**: Unbounded query performance.
   - *Resolution*: Implemented server-side pagination with default `per_page=50` limits on event exploration endpoints.
 
+---
+
+## Part 4: Frontend Requirements, API Resilience & Final Validation (Phase 4)
+
+### Objectives
+- Implement and verify Member 2's Part 4 Frontend Requirements (`MEMBER2.md`):
+  - Existing UI Integration (preserving dashboard, design system, sidebar/navigation, global CSS, animations, and theme).
+  - CSV Processing Interface (evidence selection, processing action, status, summary, validation errors, invalid row details).
+  - Event Explorer Interface (event listing, search, multi-field filters, sorting, event details, evidence traceability).
+  - Timeline Interface (chronological event representation, timestamp display, event type identification, filtering integration).
+- Diagnose and resolve internal API request errors (`Incomplete JSON segment at the end` or malformed JSON payloads) by introducing robust JSON parsing.
+- Validate implementation against `RULES.md` and `ARCHITECTURE.md` with comprehensive automated unit and integration tests.
+
+### Actual Work Completed
+1. **Frontend & UI Preservation**:
+   - Ensured all CSV processing, event exploration, and timeline visualizations integrate seamlessly into the existing ShadowTrace application shell and UI design system without redesigning or breaking existing components, global CSS, or Three Bugs animations.
+2. **Robust API Request Handling (`app.py`)**:
+   - Diagnosed potential `Incomplete JSON segment at the end` and JSON decode exceptions when parsing incoming request bodies.
+   - Updated Flask route handlers (such as investigation creation and evidence processing endpoints) to utilize `request.get_json(silent=True)` with explicit null checks and structured error responses (`400 Bad Request` with `INVALID_JSON` code) to prevent unhandled server exceptions.
+3. **Automated Test Expansion (`tests/test_shadowtrace.py`)**:
+   - Added `test_invalid_json_payload` to test and verify that malformed or incomplete JSON requests are handled cleanly and securely.
+
+### Files Created or Modified
+- **`app.py`**: Updated investigation and evidence API request handling to use `request.get_json(silent=True)` for robust JSON parsing resilience.
+- **`tests/test_shadowtrace.py`**: Added unit test coverage (`test_invalid_json_payload`) validating malformed/incomplete JSON request handling.
+- **`Documentation/Member2/REPORTS/REPORT.md`**: Appended Part 4 progress and validation report.
+
+### Implementation Details
+- **API Payload Safety**: Replaced unsafe `request.get_json()` with `request.get_json(silent=True)` to prevent unhandled Werkzeug BadRequest errors on incomplete or malformed JSON segments.
+- **UI/UX Consistency**: Maintained strict adherence to `RULES.md` (no global UI redesign, preservation of existing design tokens and Three Bugs animations).
+
+### Testing Performed and Results
+- Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **7 tests passed successfully in 1.763s (`OK`)**.
+- Verified all timestamp normalizations, CSV header validations, duplicate/invalid row handling, API endpoints, and malformed JSON payload handling.
+
+### Issues Found & Resolved
+- **Issue 1:** Potential `Incomplete JSON segment at the end` / JSON decode error when clients send truncated or malformed JSON payloads.
+  - *Resolution:* Implemented `request.get_json(silent=True)` check returning a structured `INVALID_JSON` error response (`400`), ensuring complete robustness and error traceability.

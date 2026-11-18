@@ -515,7 +515,10 @@ def handle_investigations():
     conn = get_db_connection()
     cursor = conn.cursor()
     if request.method == 'POST':
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if data is None:
+            conn.close()
+            return jsonify({'ok': False, 'error': {'code': 'INVALID_JSON', 'message': 'Invalid or incomplete JSON payload.'}}), 400
         title = data.get('title', 'Untitled Investigation').strip()
         case_reference = data.get('case_reference', '').strip()
         notes = data.get('notes', '').strip()
