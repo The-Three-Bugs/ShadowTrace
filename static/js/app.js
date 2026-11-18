@@ -731,9 +731,14 @@ function bindUploader() {
 /* ===================== THREATS ===================== */
 async function loadThreats() {
   try {
-    const data = await api.detections();
+    const p = new URLSearchParams({
+      search: state.threatSearch,
+      severity: state.threatSeverity
+    });
+    const res = await fetch(`/api/investigations/1/findings?${p}`);
+    const data = await res.json();
     const tbody = $('threatsBody');
-    const rows = data.detections || [];
+    const rows = data.data || [];
     $('threatCountLabel').textContent = `${rows.length} findings`;
     $('navThreatBadge').textContent = rows.length;
     $('navThreatBadge').dataset.zero = rows.length === 0;
@@ -742,20 +747,127 @@ async function loadThreats() {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No threats detected yet.</td></tr>`;
     } else {
       tbody.innerHTML = rows.map((r) => `
-        <tr>
+        <tr class="clickable-row" onclick="openFindingModal(${r.id})" title="Click to inspect finding details">
           <td class="mono">#${r.id}</td>
-          <td class="mono">${r.timestamp || '—'}</td>
-          <td class="mono">${r.source_ip || '—'}</td>
-          <td style="color:var(--txt-0);font-weight:500;">${r.rule_triggered || '—'}</td>
+          <td class="mono">${r.detected_at || '—'}</td>
+          <td class="mono">Rule ${r.rule_id || '—'}</td>
+          <td style="color:var(--txt-0);font-weight:500;">${r.rule_name || r.rule_id}</td>
           <td>${sevBadge(r.severity)}</td>
-          <td style="color:var(--txt-2);font-size:12px;max-width:320px;">${r.evidence || '—'}</td>
-          <td><span class="sev Informational" style="color:#a78bfa;">${r.status || 'Active'}</span></td>
+          <td style="color:var(--txt-2);font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.description || '—'}</td>
+          <td><span class="sev Informational" style="color:#a78bfa;">${r.status || 'New'}</span></td>
         </tr>`).join('');
     }
   } catch (e) {
     console.error(e);
   }
 }
+
+let currentFindingId = null;
+
+async function openFindingModal(id) {
+  currentFindingId = id;
+  try {
+    const res = await fetch(`/api/findings/${id}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const f = data.data;
+
+    $('modalFindingTitle').textContent = `Finding #${f.id} — ${f.rule_id}`;
+    $('modalRuleName').textContent = `${f.rule_id}: ${f.rule_name}`;
+    $('modalSeverityBadge').innerHTML = sevBadge(f.severity);
+    $('modalStatusSelect').value = f.status;
+    $('modalDescription').textContent = f.description;
+    $('modalEventCount').textContent = (f.supporting_events || []).length;
+
+    const evBody = $('modalEventsBody');
+    const evs = f.supporting_events || [];
+    if (!evs.length) {
+      evBody.innerHTML = `<tr class="empty-row"><td colspan="6">No supporting events.</td></tr>`;
+    } else {
+      evBody.innerHTML = evs.map((e) => `
+        <tr>
+          <td class="mono">#${e.id}</td>
+          <td class="mono">${e.timestamp}</td>
+          <td class="mono">${e.source_ip}</td>
+          <td>${e.username}</td>
+          <td>${e.event_type}</td>
+          <td>${e.status}</td>
+        </tr>`).join('');
+    }
+
+    renderNotes(f.notes || []);
+    $('findingModalOverlay').classList.add('active');
+    lucide.createIcons();
+  } catch (e) {
+    toast('error', 'Error', e.message);
+  }
+}
+
+function renderNotes(notes) {
+  const list = $('modalNotesList');
+  if (!notes.length) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--txt-2);">No investigation notes yet.</div>`;
+    return;
+  }
+  list.innerHTML = notes.map((n) => `
+    <div class="note-item">
+      <div class="note-date">${n.created_at || 'Just now'}</div>
+      <div>${n.note_text}</div>
+    </div>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if ($('modalCloseBtn')) {
+    $('modalCloseBtn').addEventListener('click', () => {
+      $('findingModalOverlay').classList.remove('active');
+    });
+  }
+  if ($('findingModalOverlay')) {
+    $('findingModalOverlay').addEventListener('click', (e) => {
+      if (e.target === $('findingModalOverlay')) $('findingModalOverlay').classList.remove('active');
+    });
+  }
+  if ($('modalStatusSelect')) {
+    $('modalStatusSelect').addEventListener('change', async (e) => {
+      if (!currentFindingId) return;
+      try {
+        const res = await fetch(`/api/findings/${currentFindingId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: e.target.value })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        toast('success', 'Status Updated', `Finding #${currentFindingId} status updated to ${e.target.value}`);
+        loadThreats();
+      } catch (err) {
+        toast('error', 'Update Failed', err.message);
+      }
+    });
+  }
+  if ($('modalAddNoteBtn')) {
+    $('modalAddNoteBtn').addEventListener('click', async () => {
+      if (!currentFindingId) return;
+      const text = $('modalNoteInput').value.trim();
+      if (!text) return;
+      try {
+        const res = await fetch(`/api/findings/${currentFindingId}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note_text: text })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        $('modalNoteInput').value = '';
+        toast('success', 'Note Added', 'Investigation note saved successfully.');
+        openFindingModal(currentFindingId);
+        loadThreats();
+      } catch (err) {
+        toast('error', 'Failed to Add Note', err.message);
+      }
+    });
+  }
+});
 
 function bindThreatFilters() {
   let t;

@@ -1,16 +1,19 @@
 import sys
 import os
 import unittest
+import json
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database import init_db, get_db_connection
 from csv_processor import process_csv_content
 from detector import analyze_records
+from app import app
 
 class TestShadowTrace(unittest.TestCase):
     def setUp(self):
         init_db()
+        self.client = app.test_client()
         from app import login_attempts_store
         login_attempts_store.clear()
 
@@ -21,19 +24,134 @@ class TestShadowTrace(unittest.TestCase):
         self.assertEqual(len(result['valid_records']), 1)
         self.assertEqual(result['valid_records'][0]['source_ip'], '192.168.1.100')
 
+    def test_empty_investigation_handling(self):
+        res = analyze_records([])
+        self.assertEqual(res['suspicious_count'], 0)
+        self.assertEqual(len(res['findings']), 0)
+        self.assertEqual(len(res['records']), 0)
+
     def test_detector_rules(self):
         records = [
             {'timestamp': '2026-10-14 10:00:00', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'failed', 'severity': 'Low', 'detection_reason': ''},
             {'timestamp': '2026-10-14 10:00:01', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'failed', 'severity': 'Low', 'detection_reason': ''},
             {'timestamp': '2026-10-14 10:00:02', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'failed', 'severity': 'Low', 'detection_reason': ''},
-            {'timestamp': '2026-10-14 10:00:03', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'failed', 'severity': 'Low', 'detection_reason': ''},
-            {'timestamp': '2026-10-14 10:00:04', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'failed', 'severity': 'Low', 'detection_reason': ''},
+            {'timestamp': '2026-10-14 10:00:03', 'source_ip': '1.2.3.4', 'event_type': 'login_attempt', 'username': 'admin', 'status': 'success', 'severity': 'Low', 'detection_reason': ''},
             {'timestamp': '2026-10-14 10:00:05', 'source_ip': '5.6.7.8', 'event_type': 'unauthorized_access', 'username': 'guest', 'status': 'forbidden', 'severity': 'Low', 'detection_reason': ''}
         ]
         res = analyze_records(records)
         self.assertTrue(res['suspicious_count'] > 0)
-        self.assertTrue(any('Rule 1' in d['rule_triggered'] for d in res['detections']))
-        self.assertTrue(any('Rule 2' in d['rule_triggered'] for d in res['detections']))
+        self.assertTrue(any(f['rule_id'] == 'RULE-01' for f in res['findings']))
+        self.assertTrue(any(f['rule_id'] == 'RULE-02' for f in res['findings']))
+        self.assertTrue(any(f['rule_id'] == 'RULE-03' for f in res['findings']))
+        # Verify supporting event references exist
+        for f in res['findings']:
+            self.assertIn('supporting_event_ids', f)
+            self.assertTrue(len(f['supporting_event_ids']) > 0)
+
+    def test_member3_findings_and_api(self):
+        # Load sample data via API
+        res = self.client.post('/api/load-sample')
+        self.assertEqual(res.status_code, 200)
+
+        # Test listing findings
+        res_findings = self.client.get('/api/investigations/1/findings')
+        self.assertEqual(res_findings.status_code, 200)
+        data = res_findings.get_json()
+        self.assertTrue(data['ok'])
+        findings = data['data']
+        self.assertTrue(len(findings) > 0)
+
+        finding_id = findings[0]['id']
+
+        # Test get finding details and event relationships
+        res_detail = self.client.get(f'/api/findings/{finding_id}')
+        self.assertEqual(res_detail.status_code, 200)
+        detail_data = res_detail.get_json()
+        self.assertTrue(detail_data['ok'])
+        self.assertIn('supporting_events', detail_data['data'])
+        self.assertIn('notes', detail_data['data'])
+
+        # Test update finding status (valid status)
+        res_status = self.client.patch(f'/api/findings/{finding_id}/status', json={'status': 'Under Review'})
+        self.assertEqual(res_status.status_code, 200)
+        status_data = res_status.get_json()
+        self.assertTrue(status_data['ok'])
+        self.assertEqual(status_data['data']['status'], 'Under Review')
+
+        # Test update finding status (invalid status rejection)
+        res_bad_status = self.client.patch(f'/api/findings/{finding_id}/status', json={'status': 'InvalidStatus'})
+        self.assertEqual(res_bad_status.status_code, 400)
+
+        # Test add finding note
+        res_note = self.client.post(f'/api/findings/{finding_id}/notes', json={'note_text': 'Investigating suspicious activity source IP.'})
+        self.assertEqual(res_note.status_code, 200)
+        note_data = res_note.get_json()
+        self.assertTrue(note_data['ok'])
+        self.assertEqual(note_data['data']['note_text'], 'Investigating suspicious activity source IP.')
+
+        # Test add empty note rejection
+        res_empty_note = self.client.post(f'/api/findings/{finding_id}/notes', json={'note_text': ''})
+        self.assertEqual(res_empty_note.status_code, 400)
+
+        # Test finding filters
+        res_filter = self.client.get('/api/investigations/1/findings?severity=High&status=Under Review')
+        self.assertEqual(res_filter.status_code, 200)
+        self.assertTrue(res_filter.get_json()['ok'])
+
+        # Test analysis run history & repeat analysis
+        res_runs = self.client.get('/api/investigations/1/analysis-runs')
+        self.assertEqual(res_runs.status_code, 200)
+        runs_data = res_runs.get_json()
+        self.assertTrue(runs_data['ok'])
+        self.assertTrue(len(runs_data['data']) > 0)
+
+        # Test repeat analysis execution
+        res_analyze = self.client.post('/api/investigations/1/analyze')
+        self.assertEqual(res_analyze.status_code, 200)
+        analyze_data = res_analyze.get_json()
+        self.assertTrue(analyze_data['ok'])
+        self.assertEqual(analyze_data['data']['investigation_id'], 1)
+
+    def test_security_headers(self):
+        res = self.client.get('/api/stats')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get('X-Content-Type-Options'), 'nosniff')
+        self.assertEqual(res.headers.get('X-Frame-Options'), 'SAMEORIGIN')
+        self.assertEqual(res.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin')
+
+    def test_cors_headers(self):
+        res = self.client.get('/api/stats')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get('Access-Control-Allow-Origin'), '*')
+        self.assertIn('GET', res.headers.get('Access-Control-Allow-Methods', ''))
+
+    def test_centralized_error_handler(self):
+        res = self.client.get('/api/nonexistent-endpoint-security-test')
+        self.assertEqual(res.status_code, 404)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+        self.assertIn('error', data)
+        self.assertEqual(data['error']['code'], 'NOT_FOUND')
+
+    def test_rate_limiting(self):
+        # Hit analyze endpoint twice in rapid succession
+        self.client.post('/api/investigations/1/analyze')
+        res = self.client.post('/api/investigations/1/analyze')
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error']['code'], 'RATE_LIMIT_EXCEEDED')
+
+    def test_security_audit_logging(self):
+        # Trigger a 404 to generate a security audit log entry
+        self.client.get('/api/trigger-audit-404-test')
+        res = self.client.get('/api/security/audit-logs')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['ok'])
+        logs = data['data']
+        self.assertTrue(len(logs) > 0)
+        self.assertTrue(any(log['event_type'] == 'NOT_FOUND' for log in logs))
 
     def test_investigations_and_evidence(self):
         from app import app
