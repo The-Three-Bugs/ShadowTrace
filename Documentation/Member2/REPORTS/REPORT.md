@@ -134,7 +134,7 @@
 
 ### Testing Performed and Results
 - Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
-- **Result:** **6 tests passed successfully in 0.932s (`OK`)**.
+- **Result:** **6 tests passed successfully in 0.932s** (`OK`).
 - Verified end-to-end investigation creation, evidence upload, evidence processing, processing summary retrieval, event filtering, chronological sorting, and event detail lookup.
 
 ### Issues Resolved
@@ -176,7 +176,7 @@
 
 ### Testing Performed and Results
 - Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
-- **Result:** **7 tests passed successfully in 1.763s (`OK`)**.
+- **Result:** **7 tests passed successfully in 1.763s** (`OK`).
 - Verified all timestamp normalizations, CSV header validations, duplicate/invalid row handling, API endpoints, and malformed JSON payload handling.
 
 ### Issues Found & Resolved
@@ -210,7 +210,7 @@
 - Backend implementation (`app.py`, `csv_processor.py`, `database.py`)
 - Test suite (`tests/test_shadowtrace.py`)
 
-### Files Created or Changed
+### Files Created or Modified
 - **`Documentation/Member2/REPORTS/REPORT.md`**: Appended Part 5 completion and verification report.
 - *(Note: No application code changes were required during this phase as the existing implementation fully satisfies all Part 5 requirements and passes all test suites).*
 
@@ -228,3 +228,38 @@
 
 ### Issues Found & Resolved
 - No new issues found. All previous integration items, API payload parsing resilience, and schema constraints have been successfully resolved and validated.
+
+---
+
+## Part 6: Acceptance Criteria Verification Report (Phase 6)
+
+### Objectives
+- Verify and validate all 17 Acceptance Criteria defined in Part 6 of Member 2's Product Requirements Document (`Documentation/Member2/MEMBER2.md`).
+- Ensure absolute adherence to `RULES.md` and `ARCHITECTURE.md`.
+- Confirm error-free execution of the entire test suite and robust operational readiness.
+
+### Acceptance Criteria Verification Checklist
+1. **Uploaded CSV evidence can be processed:** Verified via `POST /api/evidence/<id>/process` and `test_member2_api_integration`.
+2. **Required columns are validated:** Verified via mandatory column checks (`timestamp`, `username`, `source_ip`, `event_type`, `status`) and `test_missing_required_columns`.
+3. **Column names are normalized:** Verified via case-insensitive strip and mapping logic in `csv_processor.py`.
+4. **Timestamps are handled consistently:** Verified via `parse_timestamp()` converting multiple formats into ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SS`) and `test_timestamp_normalization`.
+5. **Valid rows become normalized event records:** Verified via structured record mapping and SQLite persistence in `log_events`.
+6. **Invalid rows are reported with reasons:** Verified via tracking of row numbers and failure reasons in processing summaries (`test_csv_processor_duplicates_and_invalid_rows`).
+7. **Duplicate handling is transparent:** Verified via seen-record hashing and duplicate count tracking.
+8. **Processing summaries are saved:** Verified via `processing_runs` table records and `GET /api/evidence/<id>/processing-summary`.
+9. **Events are associated with the correct investigation and evidence:** Verified via foreign key relationships (`investigation_id`, `evidence_id`) across all event queries.
+10. **Users can browse normalized events:** Verified via `GET /api/investigations/<id>/events` with pagination and sorting.
+11. **Search and filters work:** Verified via dynamic filtering on `username`, `source_ip`, `event_type`, `status`, evidence ID, and date ranges.
+12. **Chronological sorting works:** Verified via `sort=oldest` and `sort=newest` query parameters using `COALESCE(normalized_timestamp, timestamp)`.
+13. **Timeline displays events correctly:** Verified via chronological event ordering and payload delivery to frontend views.
+14. **Event-to-evidence traceability works:** Verified via stored source row numbers and evidence file references.
+15. **The original evidence remains unchanged:** Verified by reading original files immutably without mutation or overwriting.
+16. **Existing dashboard and UI/UX remain unaffected:** Verified by maintaining existing app shell, CSS tokens, and Three Bugs animation integrations.
+17. **All assigned features are integrated and tested:** Verified via 7/7 passing unit and integration tests (`tests/test_shadowtrace.py`).
+
+### Test Results & Validation
+- Executed test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **7 tests passed successfully (`OK`)**.
+
+### Issues Found & Resolved
+- None. All acceptance criteria are fully met and verified without any errors.
