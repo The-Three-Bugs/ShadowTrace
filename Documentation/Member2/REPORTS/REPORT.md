@@ -296,3 +296,25 @@
 
 ### Issues Found & Resolved
 - None. Handoff specifications and integration contracts are fully established, documented, and tested.
+
+---
+
+## Part 8: Out of Scope Enforcement & Boundary Verification (Phase 8)
+
+### Objectives
+- Implement and enforce Part 8 of Member 2's duties (`Documentation/Member2/MEMBER2.md`): **Out of Scope** boundaries.
+- Verify that Member 2 has strictly respected all negative constraints and architectural boundaries (not touching Investigation Management, Evidence Upload, SHA-256 calculation, Detection Engine, Findings Management, Reports/Exports, Audit Trail, Settings, Dashboard redesign, or Global UI/UX changes).
+- Document boundary enforcement in `Documentation/Member2/REPORTS/REPORT.md`.
+
+### Out of Scope Boundaries Enforced
+- **Investigation Management & Evidence Upload (Member 1):** Preserved Member 1's ownership; Member 2 only consumes existing evidence files and investigations via foreign keys without modifying Member 1's upload logic.
+- **Detection Engine & Findings Management (Member 3):** Strictly excluded; Member 2 provides normalized events via API/database without implementing detection rules or findings.
+- **Reports, Audit Trail & Settings (Member 4):** Excluded; Member 2 does not generate reports, manage audit logs, or alter settings.
+- **UI/UX & Dashboard Redesign:** Excluded; Member 2 integrated features into the existing ShadowTrace application shell without modifying global CSS, navigation layout, or Three Bugs animations.
+
+### Test Results & Validation
+- Executed test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **7 tests passed successfully (`OK`)**.
+
+### Issues Found & Resolved
+- None. All out-of-scope boundaries are strictly maintained and verified without any errors.
