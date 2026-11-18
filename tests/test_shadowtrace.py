@@ -140,5 +140,16 @@ class TestShadowTrace(unittest.TestCase):
         self.assertFalse(data['ok'])
         self.assertEqual(data['error']['code'], 'RATE_LIMIT_EXCEEDED')
 
+    def test_security_audit_logging(self):
+        # Trigger a 404 to generate a security audit log entry
+        self.client.get('/api/trigger-audit-404-test')
+        res = self.client.get('/api/security/audit-logs')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['ok'])
+        logs = data['data']
+        self.assertTrue(len(logs) > 0)
+        self.assertTrue(any(log['event_type'] == 'NOT_FOUND' for log in logs))
+
 if __name__ == '__main__':
     unittest.main()

@@ -120,6 +120,18 @@ def init_db():
             FOREIGN KEY (finding_id) REFERENCES findings(id)
         )
     ''')
+
+    # Security audit logs table (Security-3 PRD §10)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS security_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            severity TEXT DEFAULT 'Medium',
+            details TEXT,
+            client_ip TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
     conn.commit()
     conn.close()

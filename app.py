@@ -19,6 +19,19 @@ def check_rate_limit(key, limit_seconds=0.2):
     request_timestamps[key] = now
     return True
 
+def log_security_event(event_type, severity='Medium', details='', client_ip='unknown'):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO security_audit_logs (event_type, severity, details, client_ip)
+            VALUES (?, ?, ?, ?)
+        ''', (event_type, severity, details, client_ip))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Audit log error: {e}")
+
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -31,27 +44,49 @@ def add_security_headers(response):
 
 @app.errorhandler(400)
 def bad_request(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('BAD_REQUEST', 'Low', f'Path: {request.path}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'BAD_REQUEST', 'message': str(e.description if hasattr(e, 'description') else 'Invalid request.')}}), 400
 
 @app.errorhandler(404)
 def not_found(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('NOT_FOUND', 'Low', f'Path: {request.path}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'Requested resource not found.'}}), 404
 
 @app.errorhandler(405)
 def method_not_allowed(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('METHOD_NOT_ALLOWED', 'Low', f'Path: {request.path}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'METHOD_NOT_ALLOWED', 'message': 'HTTP method not allowed for this endpoint.'}}), 405
 
 @app.errorhandler(413)
 def payload_too_large(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('PAYLOAD_TOO_LARGE', 'Medium', f'Path: {request.path}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'PAYLOAD_TOO_LARGE', 'message': 'File or request body exceeds the maximum permitted size (16MB).'}}), 413
 
 @app.errorhandler(429)
 def rate_limit_exceeded(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('RATE_LIMIT_EXCEEDED', 'High', f'Endpoint: {request.endpoint}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests. Please wait before retrying.'}}), 429
 
 @app.errorhandler(500)
 def internal_server_error(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('INTERNAL_SERVER_ERROR', 'Critical', f'Path: {request.path}', client_ip)
     return jsonify({'ok': False, 'error': {'code': 'INTERNAL_SERVER_ERROR', 'message': 'An internal server error occurred.'}}), 500
+
+@app.route('/api/security/audit-logs', methods=['GET'])
+def get_security_audit_logs():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM security_audit_logs ORDER BY id DESC LIMIT 50')
+    rows = cursor.fetchall()
+    logs = [dict(r) for r in rows]
+    conn.close()
+    return jsonify({'ok': True, 'data': logs})
 
 # Initialize DB on startup
 init_db()
