@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Flask, render_template, request, jsonify, Response
 from database import init_db, get_db_connection
 from csv_processor import process_csv_content
@@ -7,12 +8,50 @@ from detector import analyze_records
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16MB max upload
 
+# In-memory rate limiting tracker
+request_timestamps = {}
+
+def check_rate_limit(key, limit_seconds=0.2):
+    now = time.time()
+    last = request_timestamps.get(key, 0)
+    if now - last < limit_seconds:
+        return False
+    request_timestamps[key] = now
+    return True
+
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({'ok': False, 'error': {'code': 'BAD_REQUEST', 'message': str(e.description if hasattr(e, 'description') else 'Invalid request.')}}), 400
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'Requested resource not found.'}}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({'ok': False, 'error': {'code': 'METHOD_NOT_ALLOWED', 'message': 'HTTP method not allowed for this endpoint.'}}), 405
+
+@app.errorhandler(413)
+def payload_too_large(e):
+    return jsonify({'ok': False, 'error': {'code': 'PAYLOAD_TOO_LARGE', 'message': 'File or request body exceeds the maximum permitted size (16MB).'}}), 413
+
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+    return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests. Please wait before retrying.'}}), 429
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return jsonify({'ok': False, 'error': {'code': 'INTERNAL_SERVER_ERROR', 'message': 'An internal server error occurred.'}}), 500
 
 # Initialize DB on startup
 init_db()
@@ -180,6 +219,10 @@ def get_detections():
 
 @app.route('/api/investigations/<int:investigation_id>/analyze', methods=['POST'])
 def run_investigation_analysis(investigation_id):
+    client_ip = request.remote_addr or 'unknown'
+    if not check_rate_limit(f"{client_ip}:analyze", limit_seconds=0.05):
+        return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid analysis requests.'}}), 429
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -375,6 +418,10 @@ def add_finding_note(finding_id):
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
+    client_ip = request.remote_addr or 'unknown'
+    if not check_rate_limit(f"{client_ip}:upload", limit_seconds=0.05):
+        return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid upload requests.'}}), 429
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request.'}), 400
         
@@ -456,6 +503,10 @@ def upload_file():
 
 @app.route('/api/load-sample', methods=['POST'])
 def load_sample():
+    client_ip = request.remote_addr or 'unknown'
+    if not check_rate_limit(f"{client_ip}:load-sample", limit_seconds=0.05):
+        return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests.'}}), 429
+
     root_dir = os.path.dirname(os.path.abspath(__file__))
     sample_path = os.path.join(root_dir, 'data', 'sample_logs.csv')
     if not os.path.exists(sample_path):

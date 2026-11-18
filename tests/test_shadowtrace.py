@@ -117,5 +117,28 @@ class TestShadowTrace(unittest.TestCase):
         self.assertEqual(res.headers.get('X-Frame-Options'), 'SAMEORIGIN')
         self.assertEqual(res.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin')
 
+    def test_cors_headers(self):
+        res = self.client.get('/api/stats')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get('Access-Control-Allow-Origin'), '*')
+        self.assertIn('GET', res.headers.get('Access-Control-Allow-Methods', ''))
+
+    def test_centralized_error_handler(self):
+        res = self.client.get('/api/nonexistent-endpoint-security-test')
+        self.assertEqual(res.status_code, 404)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+        self.assertIn('error', data)
+        self.assertEqual(data['error']['code'], 'NOT_FOUND')
+
+    def test_rate_limiting(self):
+        # Hit analyze endpoint twice in rapid succession
+        self.client.post('/api/investigations/1/analyze')
+        res = self.client.post('/api/investigations/1/analyze')
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error']['code'], 'RATE_LIMIT_EXCEEDED')
+
 if __name__ == '__main__':
     unittest.main()
