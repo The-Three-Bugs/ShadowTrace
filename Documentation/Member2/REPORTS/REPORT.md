@@ -263,3 +263,36 @@
 
 ### Issues Found & Resolved
 - None. All acceptance criteria are fully met and verified without any errors.
+
+---
+
+## Part 7: Handoff to Other Members (Phase 7)
+
+### Objectives
+- Implement and formalize Part 7 of Member 2's duties (`Documentation/Member2/MEMBER2.md`): **Handoff to Other Members** (specifically providing Member 3 with all required event schemas, data contracts, and API endpoints for the Rule-Based Detection Engine).
+- Create a dedicated technical handoff specification (`Documentation/Member2/HANDOFF.md`).
+- Ensure all handoff contracts are fully validated against `RULES.md` and `ARCHITECTURE.md`.
+
+### Handoff Deliverables Provided to Member 3
+1. **Normalized Event Schema**: SQLite table schema (`log_events`) with complete fields (`id`, `run_id`, `investigation_id`, `evidence_id`, `source_row_number`, `timestamp`, `normalized_timestamp`, `source_ip`, `event_type`, `username`, `status`, `severity`, `detection_reason`).
+2. **Event ID Format**: Auto-incrementing integer primary key (`id`).
+3. **Investigation ID Relationship**: Foreign key `investigation_id` referencing `investigations.id`.
+4. **Evidence ID Relationship**: Foreign key `evidence_id` referencing `evidence_files.id`.
+5. **Timestamp Representation**: ISO-8601 UTC format (`YYYY-MM-DDTHH:MM:SS`) stored in `normalized_timestamp`.
+6. **Username Field**: `username` (string representing user entity).
+7. **Source IP Field**: `source_ip` (string representing originating IP).
+8. **Event Type Field**: `event_type` (string representing classification).
+9. **Status Field**: `status` (string representing outcome).
+10. **Event Retrieval API**: `GET /api/investigations/<id>/events` with full filtering, sorting, and pagination support.
+11. **Processing Summary Structure**: `GET /api/evidence/<id>/processing-summary` reporting metrics on total, valid, invalid, and duplicate rows.
+
+### Files Created or Modified
+- **`Documentation/Member2/HANDOFF.md`**: Created comprehensive technical handoff specification document for Member 3.
+- **`Documentation/Member2/REPORTS/REPORT.md`**: Appended Part 7 handoff report.
+
+### Test Results & Validation
+- Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **7 tests passed successfully (`OK`)**.
+
+### Issues Found & Resolved
+- None. Handoff specifications and integration contracts are fully established, documented, and tested.
