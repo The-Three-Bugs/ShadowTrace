@@ -2,19 +2,4 @@ venv/
 instance/
 __pycache__/
 *.pyc
-*.pyo
 uploads/
-reports/
-backups/
-.env
-.env.*
-!.env.example
-*.db
-*.sqlite3
-*.log
-node_modules/
-install_tools.bat
-static/3Bugs.mp4
-static/landing video.mp4
-3Bugs.mp4
-landing video.mp4
