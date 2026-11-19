@@ -233,6 +233,7 @@ def api_login():
     
     if not user or not check_password_hash(user['password_hash'], password):
         record_failed_attempt(throttle_key)
+        log_security_event('LOGIN_FAILED', 'Medium', f'Failed login attempt for username: {username}', client_ip)
         return jsonify({
             'ok': False,
             'error': {
@@ -249,6 +250,8 @@ def api_login():
     session['username'] = user['username']
     session['role'] = user['role']
     
+    log_security_event('LOGIN_SUCCESS', 'Low', f'Successful login for username: {username} (Role: {user["role"]})', client_ip)
+    
     return jsonify({
         'ok': True,
         'data': {
@@ -262,6 +265,9 @@ def api_login():
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
+    client_ip = request.remote_addr or 'unknown'
+    username = session.get('username', 'unknown')
+    log_security_event('LOGOUT', 'Low', f'User logged out: {username}', client_ip)
     session.clear()
     return jsonify({
         'ok': True,
@@ -302,6 +308,8 @@ def api_change_password():
         }), 400
         
     user_id = session.get('user_id')
+    username = session.get('username', 'unknown')
+    client_ip = request.remote_addr or 'unknown'
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
@@ -321,6 +329,8 @@ def api_change_password():
     cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_hash, user_id))
     conn.commit()
     conn.close()
+    
+    log_security_event('PASSWORD_CHANGE', 'Medium', f'Password changed for user: {username}', client_ip)
     
     # Invalidate session after password change for security
     session.clear()

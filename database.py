@@ -16,6 +16,32 @@ def init_db():
     # Enable foreign keys
     cursor.execute('PRAGMA foreign_keys = ON;')
     
+    # Users table (Member 1 - Security) - created first so foreign keys can reference users(id)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'Analyst',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Seed or reset default users (Admin, Analyst, Viewer) for test isolation and consistency
+    from werkzeug.security import generate_password_hash
+    default_users = [
+        ('admin', generate_password_hash('AdminSecret123!'), 'Administrator'),
+        ('analyst', generate_password_hash('AnalystPass123!'), 'Analyst'),
+        ('viewer', generate_password_hash('ViewerPass123!'), 'Viewer')
+    ]
+    for uname, phash, urole in default_users:
+        cursor.execute('SELECT id FROM users WHERE username = ?', (uname,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', (phash, urole, uname))
+        else:
+            cursor.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', (uname, phash, urole))
+
     # Investigations table (Member 1)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS investigations (
@@ -31,12 +57,56 @@ def init_db():
         )
     ''')
     
-    # Migration: ensure user_id column exists if table was created previously without it
+    # Migration: ensure columns exist if table was created previously without them
     cursor.execute("PRAGMA table_info(investigations)")
     columns = [col['name'] for col in cursor.fetchall()]
+    if 'investigation_uid' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN investigation_uid TEXT;")
+        except Exception:
+            pass
+    if 'title' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN title TEXT;")
+            if 'name' in columns:
+                cursor.execute("UPDATE investigations SET title = name WHERE title IS NULL")
+        except Exception:
+            pass
+    if 'description' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN description TEXT;")
+        except Exception:
+            pass
+    if 'status' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN status TEXT DEFAULT 'Open';")
+        except Exception:
+            pass
     if 'user_id' not in columns:
         try:
             cursor.execute("ALTER TABLE investigations ADD COLUMN user_id INTEGER;")
+        except Exception:
+            pass
+    if 'updated_at' not in columns:
+        try:
+            cursor.execute("ALTER TABLE investigations ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP;")
+        except Exception:
+            pass
+
+    # Ensure default investigation exists
+    cursor.execute('SELECT COUNT(*) FROM investigations')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "INSERT INTO investigations (investigation_uid, title, description, status) VALUES (?, ?, ?, ?)",
+            ('INV-DEFAULT-001', 'Default Investigation', 'Default auto-created investigation', 'Open')
+        )
+    else:
+        try:
+            cursor.execute("UPDATE investigations SET investigation_uid = 'INV-DEFAULT-' || id WHERE investigation_uid IS NULL")
+        except Exception:
+            pass
+        try:
+            cursor.execute("UPDATE investigations SET title = COALESCE(title, 'Default Investigation') WHERE title IS NULL")
         except Exception:
             pass
     
@@ -55,26 +125,11 @@ def init_db():
         )
     ''')
     
-    # Investigations table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS investigations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Ensure default investigation exists
-    cursor.execute('SELECT COUNT(*) FROM investigations')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO investigations (name) VALUES ('Default Investigation')")
-    
     # Analysis runs table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analysis_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             investigation_id INTEGER DEFAULT 1,
-            investigation_id INTEGER,
             filename TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             total_records INTEGER DEFAULT 0,
@@ -82,7 +137,6 @@ def init_db():
             invalid_records INTEGER DEFAULT 0,
             suspicious_count INTEGER DEFAULT 0,
             rules_evaluated INTEGER DEFAULT 3,
-            status TEXT DEFAULT 'Completed'
             status TEXT DEFAULT 'Completed',
             FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL
         )
@@ -95,6 +149,8 @@ def init_db():
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN investigation_id INTEGER DEFAULT 1")
     if 'rules_evaluated' not in columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN rules_evaluated INTEGER DEFAULT 3")
+    if 'status' not in columns:
+        cursor.execute("ALTER TABLE analysis_runs ADD COLUMN status TEXT DEFAULT 'Completed'")
     
     # Log events table
     cursor.execute('''
@@ -178,32 +234,6 @@ def init_db():
         )
     ''')
 
-    # Users table (Member 1 - Security)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'Analyst',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Seed or reset default users (Admin, Analyst, Viewer) for test isolation and consistency
-    from werkzeug.security import generate_password_hash
-    default_users = [
-        ('admin', generate_password_hash('AdminSecret123!'), 'Administrator'),
-        ('analyst', generate_password_hash('AnalystPass123!'), 'Analyst'),
-        ('viewer', generate_password_hash('ViewerPass123!'), 'Viewer')
-    ]
-    for uname, phash, urole in default_users:
-        cursor.execute('SELECT id FROM users WHERE username = ?', (uname,))
-        row = cursor.fetchone()
-        if row:
-            cursor.execute('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', (phash, urole, uname))
-        else:
-            cursor.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', (uname, phash, urole))
-    
     conn.commit()
     conn.close()
 
