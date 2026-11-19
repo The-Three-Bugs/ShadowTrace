@@ -16,7 +16,7 @@ def init_db():
     # Enable foreign keys
     cursor.execute('PRAGMA foreign_keys = ON;')
     
-    # Users table (Member 1 - Security) - created first so foreign keys can reference users(id)
+    # 1. Users table (Member 1 - Security) - created first so foreign keys can reference users(id)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +42,7 @@ def init_db():
         else:
             cursor.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', (uname, phash, urole))
 
-    # Investigations table (Member 1)
+    # 2. Investigations table (Member 1)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS investigations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +57,7 @@ def init_db():
         )
     ''')
     
-    # Migration: ensure columns exist if table was created previously without them
+    # Migration: ensure columns exist in investigations
     cursor.execute("PRAGMA table_info(investigations)")
     columns = [col['name'] for col in cursor.fetchall()]
     if 'investigation_uid' not in columns:
@@ -70,11 +70,15 @@ def init_db():
             cursor.execute("ALTER TABLE investigations ADD COLUMN title TEXT;")
             if 'name' in columns:
                 cursor.execute("UPDATE investigations SET title = name WHERE title IS NULL")
+            if 'case_reference' in columns:
+                cursor.execute("UPDATE investigations SET title = case_reference WHERE title IS NULL")
         except Exception:
             pass
     if 'description' not in columns:
         try:
             cursor.execute("ALTER TABLE investigations ADD COLUMN description TEXT;")
+            if 'notes' in columns:
+                cursor.execute("UPDATE investigations SET description = notes WHERE description IS NULL")
         except Exception:
             pass
     if 'status' not in columns:
@@ -106,30 +110,77 @@ def init_db():
         except Exception:
             pass
         try:
-            cursor.execute("UPDATE investigations SET title = COALESCE(title, 'Default Investigation') WHERE title IS NULL")
+            cursor.execute("UPDATE investigations SET title = COALESCE(title, name, case_reference, 'Default Investigation') WHERE title IS NULL")
         except Exception:
             pass
     
-    # Evidence files table (Member 1)
+    # 3. Evidence files table (Unified Member 1 & Member 2)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS evidence_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             investigation_id INTEGER NOT NULL,
-            original_filename TEXT NOT NULL,
-            stored_filename TEXT NOT NULL,
-            file_size INTEGER NOT NULL,
-            sha256_hash TEXT NOT NULL,
+            original_filename TEXT,
+            original_name TEXT,
+            stored_filename TEXT,
+            stored_name TEXT,
+            file_size INTEGER DEFAULT 0,
+            size_bytes INTEGER DEFAULT 0,
+            sha256_hash TEXT,
+            sha256 TEXT,
             upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            imported_at DATETIME,
             processing_status TEXT DEFAULT 'Uploaded',
+            status TEXT DEFAULT 'Pending',
+            total_rows INTEGER DEFAULT 0,
+            valid_rows INTEGER DEFAULT 0,
+            invalid_rows INTEGER DEFAULT 0,
             FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
         )
     ''')
     
-    # Analysis runs table
+    # Migration for evidence_files columns
+    cursor.execute("PRAGMA table_info(evidence_files)")
+    ev_columns = [col['name'] for col in cursor.fetchall()]
+    for col_pair in [('original_filename', 'original_name'), ('stored_filename', 'stored_name'), ('file_size', 'size_bytes'), ('sha256_hash', 'sha256'), ('processing_status', 'status')]:
+        col1, col2 = col_pair
+        if col1 not in ev_columns and col2 in ev_columns:
+            try:
+                cursor.execute(f"ALTER TABLE evidence_files ADD COLUMN {col1} TEXT;")
+                cursor.execute(f"UPDATE evidence_files SET {col1} = {col2} WHERE {col1} IS NULL")
+            except Exception:
+                pass
+        if col2 not in ev_columns and col1 in ev_columns:
+            try:
+                cursor.execute(f"ALTER TABLE evidence_files ADD COLUMN {col2} TEXT;")
+                cursor.execute(f"UPDATE evidence_files SET {col2} = {col1} WHERE {col2} IS NULL")
+            except Exception:
+                pass
+
+    # 4. Processing runs table (Member 2)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processing_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investigation_id INTEGER,
+            evidence_id INTEGER,
+            total_rows INTEGER DEFAULT 0,
+            valid_rows INTEGER DEFAULT 0,
+            invalid_rows INTEGER DEFAULT 0,
+            duplicate_rows INTEGER DEFAULT 0,
+            processing_status TEXT DEFAULT 'Pending',
+            started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            error_summary TEXT,
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id)
+        )
+    ''')
+    
+    # 5. Analysis runs table (Member 3)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analysis_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             investigation_id INTEGER DEFAULT 1,
+            evidence_id INTEGER,
             filename TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             total_records INTEGER DEFAULT 0,
@@ -138,37 +189,44 @@ def init_db():
             suspicious_count INTEGER DEFAULT 0,
             rules_evaluated INTEGER DEFAULT 3,
             status TEXT DEFAULT 'Completed',
-            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL,
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id) ON DELETE SET NULL
         )
     ''')
     
-    # Check and migrate columns in analysis_runs if table already existed
+    # Check and migrate columns in analysis_runs
     cursor.execute("PRAGMA table_info(analysis_runs)")
-    columns = [col['name'] for col in cursor.fetchall()]
-    if 'investigation_id' not in columns:
+    ar_columns = [col['name'] for col in cursor.fetchall()]
+    if 'investigation_id' not in ar_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN investigation_id INTEGER DEFAULT 1")
-    if 'rules_evaluated' not in columns:
+    if 'rules_evaluated' not in ar_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN rules_evaluated INTEGER DEFAULT 3")
-    if 'status' not in columns:
+    if 'status' not in ar_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN status TEXT DEFAULT 'Completed'")
     
-    # Log events table
+    # 6. Log events table (Member 2 & 3)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS log_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id INTEGER,
+            investigation_id INTEGER,
+            evidence_id INTEGER,
+            source_row_number INTEGER,
             timestamp TEXT,
+            normalized_timestamp TEXT,
             source_ip TEXT,
             event_type TEXT,
             username TEXT,
             status TEXT,
             severity TEXT DEFAULT 'Low',
             detection_reason TEXT,
-            FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
+            FOREIGN KEY (run_id) REFERENCES analysis_runs(id),
+            FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+            FOREIGN KEY (evidence_id) REFERENCES evidence_files(id)
         )
     ''')
     
-    # Detections / Threats table (legacy compatibility)
+    # 7. Detections / Threats table (legacy compatibility)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS detections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +241,7 @@ def init_db():
         )
     ''')
     
-    # Findings table (Member 3 PRD)
+    # 8. Findings table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS findings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,7 +258,7 @@ def init_db():
         )
     ''')
     
-    # Finding events relationship table (Member 3 PRD)
+    # 9. Finding events relationship table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS finding_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,7 +269,7 @@ def init_db():
         )
     ''')
     
-    # Finding notes table (Member 3 PRD)
+    # 10. Finding notes table (Member 3 PRD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS finding_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,7 +280,7 @@ def init_db():
         )
     ''')
 
-    # Security audit logs table (Security-3 PRD §10)
+    # 11. Security audit logs table (Security-3 PRD §10)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS security_audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

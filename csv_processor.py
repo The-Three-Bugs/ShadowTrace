@@ -1,10 +1,38 @@
 import csv
 import io
+from datetime import datetime
+
+def parse_timestamp(ts_str):
+    """
+    Parses various timestamp formats into a standard ISO-8601 UTC string (YYYY-MM-DDTHH:MM:SS).
+    Returns (normalized_str, success_bool).
+    """
+    if not ts_str or not isinstance(ts_str, str):
+        return '2026-10-14T00:00:00', False
+    
+    ts_str = ts_str.strip()
+    formats = [
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%d %H:%M',
+        '%d/%m/%Y %H:%M:%S',
+        '%m/%d/%Y %H:%M:%S',
+        '%Y-%m-%d'
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(ts_str, fmt)
+            return dt.strftime('%Y-%m-%dT%H:%M:%S'), True
+        except ValueError:
+            continue
+            
+    return ts_str, False
 
 def process_csv_content(file_stream):
     """
     Processes a CSV file stream (bytes or string), validates columns,
-    and returns a list of dictionaries along with stats (total, valid, invalid).
+    normalizes timestamps and events, tracks invalid rows and duplicates,
+    and returns a summary dictionary.
     """
     if hasattr(file_stream, 'read'):
         content = file_stream.read()
@@ -24,54 +52,98 @@ def process_csv_content(file_stream):
     # Normalize header: lowercase, strip whitespace
     normalized_header = [col.strip().lower() for col in header]
     
-    # Map required/optional columns (case-insensitive)
-    # Expected: timestamp, source_ip, event_type, username, status
+    req_cols = ['timestamp', 'username', 'source_ip', 'event_type', 'status']
     col_map = {}
-    for req in ['timestamp', 'source_ip', 'event_type', 'username', 'status']:
+    missing_cols = []
+    
+    for req in req_cols:
         if req in normalized_header:
             col_map[req] = normalized_header.index(req)
         else:
-            col_map[req] = None
+            missing_cols.append(req)
 
-    # Validate that at least source_ip or event_type or timestamp is present
-    if col_map['source_ip'] is None and col_map['event_type'] is None:
-        raise ValueError("CSV missing required columns (must contain at least 'source_ip' and 'event_type').")
+    if missing_cols:
+        raise ValueError(f"CSV missing required columns: {', '.join(missing_cols)}. Expected columns: {', '.join(req_cols)}.")
 
     valid_records = []
-    invalid_count = 0
+    invalid_rows = []
+    seen_records = set()
+    duplicate_count = 0
     total_count = 0
 
+    row_number = 1 # Header is row 1
     for row in reader:
+        row_number += 1
         total_count += 1
+        
         if not row or all(not cell.strip() for cell in row):
-            invalid_count += 1
+            invalid_rows.append({
+                'row_number': row_number,
+                'reason': 'Empty or blank row.'
+            })
             continue
 
         try:
-            timestamp = row[col_map['timestamp']].strip() if col_map['timestamp'] is not None and len(row) > col_map['timestamp'] else '2026-10-14 00:00:00'
-            source_ip = row[col_map['source_ip']].strip() if col_map['source_ip'] is not None and len(row) > col_map['source_ip'] else '127.0.0.1'
-            event_type = row[col_map['event_type']].strip() if col_map['event_type'] is not None and len(row) > col_map['event_type'] else 'unknown_event'
-            username = row[col_map['username']].strip() if col_map['username'] is not None and len(row) > col_map['username'] else 'anonymous'
-            status = row[col_map['status']].strip() if col_map['status'] is not None and len(row) > col_map['status'] else 'unknown'
+            raw_ts = row[col_map['timestamp']].strip() if len(row) > col_map['timestamp'] else ''
+            username = row[col_map['username']].strip() if len(row) > col_map['username'] else 'anonymous'
+            source_ip = row[col_map['source_ip']].strip() if len(row) > col_map['source_ip'] else ''
+            event_type = row[col_map['event_type']].strip() if len(row) > col_map['event_type'] else ''
+            status = row[col_map['status']].strip() if len(row) > col_map['status'] else 'unknown'
 
-            if not source_ip or not event_type:
-                invalid_count += 1
+            # Validation checks
+            reasons = []
+            if not source_ip:
+                reasons.append("Missing source_ip")
+            if not event_type:
+                reasons.append("Missing event_type")
+            
+            norm_ts, ts_parsed = parse_timestamp(raw_ts)
+            if not raw_ts:
+                reasons.append("Missing timestamp")
+            
+            if reasons:
+                invalid_rows.append({
+                    'row_number': row_number,
+                    'reason': '; '.join(reasons)
+                })
                 continue
 
+            # Duplicate check
+            record_key = (norm_ts, username, source_ip, event_type, status)
+            if record_key in seen_records:
+                duplicate_count += 1
+                continue
+            seen_records.add(record_key)
+
             valid_records.append({
-                'timestamp': timestamp or '2026-10-14 00:00:00',
+                'source_row_number': row_number,
+                'timestamp': raw_ts,
+                'normalized_timestamp': norm_ts,
+                'username': username,
                 'source_ip': source_ip,
                 'event_type': event_type,
-                'username': username,
                 'status': status,
                 'severity': 'Low',
                 'detection_reason': 'Normal activity'
             })
-        except Exception:
-            invalid_count += 1
+        except Exception as e:
+            invalid_rows.append({
+                'row_number': row_number,
+                'reason': f"Parsing error: {str(e)}"
+            })
+
+    invalid_count = len(invalid_rows)
+    processing_status = 'Completed'
+    if invalid_count > 0:
+        processing_status = 'Completed with Errors'
+    if total_count == 0:
+        processing_status = 'Failed'
 
     return {
         'total': total_count,
         'valid_records': valid_records,
-        'invalid_count': invalid_count
+        'invalid_count': invalid_count,
+        'invalid_rows': invalid_rows,
+        'duplicate_count': duplicate_count,
+        'processing_status': processing_status
     }
