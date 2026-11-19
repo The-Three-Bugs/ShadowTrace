@@ -96,6 +96,36 @@ document.querySelectorAll('.nav-item').forEach((el) => {
 
 /* ===================== API ===================== */
 const api = {
+  // Auth API (Member 1 - SECURITY-1)
+  async me() {
+    const r = await fetch('/api/auth/me');
+    return r.json();
+  },
+  async login(username, password) {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    return { status: r.status, data };
+  },
+  async logout() {
+    const r = await fetch('/api/auth/logout', { method: 'POST' });
+    return r.json();
+  },
+  async changePassword(currentPassword, newPassword) {
+    const r = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword
+      })
+    });
+    const data = await r.json();
+    return { status: r.status, data };
+  },
   async stats() {
     const r = await fetch('/api/stats');
     return r.json();
@@ -906,6 +936,141 @@ function bindTilt() {
   });
 }
 
+/* ===================== THREE BUGS TRANSITIONS ===================== */
+function triggerScreenFlash() {
+  const flash = $('screenCyberWarp');
+  if (!flash) return;
+  flash.classList.add('flash');
+  setTimeout(() => flash.classList.remove('flash'), 450);
+}
+
+function animateLandingToLoginTransition(onComplete) {
+  const stage = $('bugTeleportStage');
+  const flyerBit = $('bugFlyerBit');
+  const flyerGlitch = $('bugFlyerGlitch');
+  const flyerScout = $('bugFlyerScout');
+  const landingContent = document.querySelector('.landing-content');
+  const loginContainer = document.querySelector('.neu-login-container');
+
+  if (landingContent) landingContent.classList.add('trans-out');
+  triggerScreenFlash();
+
+  if (!stage || !flyerBit || !flyerGlitch || !flyerScout) {
+    if (onComplete) onComplete();
+    return;
+  }
+
+  // Measure start and destination positions
+  const startCards = document.querySelectorAll('.landing-char-card');
+  const targetPods = [$('charPodBit'), $('charPodGlitch'), $('charPodScout')];
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  // Defaults if elements not yet rendered
+  let bitStart = { x: w * 0.35, y: h * 0.55 };
+  let glitchStart = { x: w * 0.5, y: h * 0.55 };
+  let scoutStart = { x: w * 0.65, y: h * 0.55 };
+
+  if (startCards.length >= 3) {
+    const r0 = startCards[0].getBoundingClientRect();
+    const r1 = startCards[1].getBoundingClientRect();
+    const r2 = startCards[2].getBoundingClientRect();
+    bitStart = { x: r0.left + r0.width / 2 - 36, y: r0.top + r0.height / 2 - 40 };
+    glitchStart = { x: r1.left + r1.width / 2 - 36, y: r1.top + r1.height / 2 - 40 };
+    scoutStart = { x: r2.left + r2.width / 2 - 36, y: r2.top + r2.height / 2 - 40 };
+  }
+
+  // Set initial flyer positions
+  stage.classList.add('active');
+  flyerBit.style.transform = `translate(${bitStart.x}px, ${bitStart.y}px) scale(0.6)`;
+  flyerGlitch.style.transform = `translate(${glitchStart.x}px, ${glitchStart.y}px) scale(0.6)`;
+  flyerScout.style.transform = `translate(${scoutStart.x}px, ${scoutStart.y}px) scale(0.6)`;
+  flyerBit.style.opacity = '1';
+  flyerGlitch.style.opacity = '1';
+  flyerScout.style.opacity = '1';
+
+  // Fly animation with hyperdrive swoop
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      let bitEnd = { x: w * 0.38 - 36, y: h * 0.28 };
+      let glitchEnd = { x: w * 0.5 - 36, y: h * 0.25 };
+      let scoutEnd = { x: w * 0.62 - 36, y: h * 0.28 };
+
+      if (targetPods[0] && targetPods[1] && targetPods[2]) {
+        const tb0 = targetPods[0].getBoundingClientRect();
+        const tb1 = targetPods[1].getBoundingClientRect();
+        const tb2 = targetPods[2].getBoundingClientRect();
+        if (tb0.width > 0) bitEnd = { x: tb0.left + tb0.width / 2 - 36, y: tb0.top + tb0.height / 2 - 40 };
+        if (tb1.width > 0) glitchEnd = { x: tb1.left + tb1.width / 2 - 36, y: tb1.top + tb1.height / 2 - 40 };
+        if (tb2.width > 0) scoutEnd = { x: tb2.left + tb2.width / 2 - 36, y: tb2.top + tb2.height / 2 - 40 };
+      }
+
+      flyerBit.style.transform = `translate(${bitEnd.x}px, ${bitEnd.y}px) scale(1.1) rotate(-8deg)`;
+      flyerGlitch.style.transform = `translate(${glitchEnd.x}px, ${glitchEnd.y}px) scale(1.2) rotate(0deg)`;
+      flyerScout.style.transform = `translate(${scoutEnd.x}px, ${scoutEnd.y}px) scale(1.1) rotate(8deg)`;
+    }, 50);
+  });
+
+  setTimeout(() => {
+    if (onComplete) onComplete();
+    if (loginContainer) loginContainer.classList.add('trans-in');
+    triggerScreenFlash();
+    setTimeout(() => {
+      flyerBit.style.opacity = '0';
+      flyerGlitch.style.opacity = '0';
+      flyerScout.style.opacity = '0';
+      setTimeout(() => {
+        stage.classList.remove('active');
+        if (landingContent) landingContent.classList.remove('trans-out');
+      }, 400);
+    }, 300);
+  }, 600);
+}
+
+function animateLoginToDashboardTransition(onComplete) {
+  const overlay = $('neuLoginOverlay');
+  const appShell = document.querySelector('.app-shell');
+  const landingVideo = $('landingVideo');
+  if (landingVideo) {
+    try { landingVideo.pause(); } catch (_) {}
+  }
+
+  // Trigger cyber warp screen flash effect
+  triggerScreenFlash();
+
+  if (overlay) overlay.classList.add('login-unlocking');
+
+  // Celebrate with flip animations, quote bubbles, and particle effects
+  if (window.ThreeBugs) {
+    if (typeof window.ThreeBugs.scatter === 'function') {
+      window.ThreeBugs.scatter();
+    }
+    if (window.ThreeBugs.bugs && window.ThreeBugs.bugs.length >= 3) {
+      window.ThreeBugs.bugs.forEach((b, idx) => {
+        setTimeout(() => {
+          if (typeof b.celebrate === 'function') b.celebrate();
+        }, idx * 180);
+      });
+      window.ThreeBugs.bugs[0].say("Access Verified! Welcome Operator 🛡️");
+      setTimeout(() => window.ThreeBugs.bugs[1].say("Initializing Threat Telemetry! ⚡"), 600);
+      setTimeout(() => window.ThreeBugs.bugs[2].say("Security Console Nominal! 🔍"), 1200);
+    }
+  }
+
+  setTimeout(() => {
+    if (overlay) {
+      overlay.classList.add('hidden');
+      overlay.classList.remove('login-unlocking');
+    }
+    if (appShell) {
+      appShell.classList.add('dashboard-unlocked');
+      setTimeout(() => appShell.classList.remove('dashboard-unlocked'), 850);
+    }
+    if (onComplete) onComplete();
+  }, 680);
+}
+
 /* ===================== LANDING INTRO ===================== */
 function initLandingIntro() {
   const overlay = $('landingIntroOverlay');
@@ -916,8 +1081,10 @@ function initLandingIntro() {
 
   function dismissIntro() {
     if (!overlay.classList.contains('fade-out')) {
-      overlay.classList.add('fade-out');
-      if (video) video.pause();
+      animateLandingToLoginTransition(() => {
+        overlay.classList.add('fade-out');
+        if (video) video.pause();
+      });
     }
   }
 
@@ -954,33 +1121,42 @@ function initCyberCanvas() {
   window.addEventListener('resize', () => {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
-  });
+  }, { passive: true });
 
   const particles = [];
-  const count = Math.min(width > 1000 ? 75 : 40, 100);
+  // Optimized particle count for high frame-rates
+  const count = Math.min(width > 1000 ? 32 : 18, 40);
 
   for (let i = 0; i < count; i++) {
     particles.push({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.9,
-      vy: (Math.random() - 0.5) * 0.9,
-      radius: Math.random() * 2 + 1
+      vx: (Math.random() - 0.5) * 0.7,
+      vy: (Math.random() - 0.5) * 0.7,
+      radius: Math.random() * 1.5 + 1
     });
   }
 
   let mouseX = -1000;
   let mouseY = -1000;
+  let isMoving = false;
   window.addEventListener('mousemove', (e) => {
     mouseX = e.clientX;
     mouseY = e.clientY;
-  });
+    isMoving = true;
+  }, { passive: true });
 
-  function animate() {
+  let lastFrame = 0;
+  function animate(now) {
+    requestAnimationFrame(animate);
+    // Throttle canvas draw to ~35fps to avoid starving CPU/GPU
+    if (now - lastFrame < 26) return;
+    lastFrame = now;
+
+    if (document.hidden) return;
+
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = 'rgba(34, 211, 238, 0.75)';
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.12)';
-    ctx.lineWidth = 1;
 
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
@@ -998,59 +1174,336 @@ function initCyberCanvas() {
         const p2 = particles[j];
         const dx = p.x - p2.x;
         const dy = p.y - p2.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 140) {
+        const distSq = dx * dx + dy * dy;
+        // Compare squared distance to avoid expensive Math.sqrt() on every frame
+        if (distSq < 10000) { // 100px
+          const dist = Math.sqrt(distSq);
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p2.x, p2.y);
-          ctx.strokeStyle = `rgba(34, 211, 238, ${0.2 * (1 - dist / 140)})`;
+          ctx.strokeStyle = `rgba(34, 211, 238, ${0.16 * (1 - dist / 100)})`;
           ctx.stroke();
         }
       }
 
-      const mdx = p.x - mouseX;
-      const mdy = p.y - mouseY;
-      const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
-      if (mdist < 170) {
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(mouseX, mouseY);
-        ctx.strokeStyle = `rgba(139, 92, 246, ${0.4 * (1 - mdist / 170)})`;
-        ctx.stroke();
+      if (isMoving) {
+        const mdx = p.x - mouseX;
+        const mdy = p.y - mouseY;
+        const mdistSq = mdx * mdx + mdy * mdy;
+        if (mdistSq < 16900) { // 130px
+          const mdist = Math.sqrt(mdistSq);
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(mouseX, mouseY);
+          ctx.strokeStyle = `rgba(139, 92, 246, ${0.35 * (1 - mdist / 130)})`;
+          ctx.stroke();
+        }
       }
     }
-
-    requestAnimationFrame(animate);
   }
-  animate();
+  requestAnimationFrame(animate);
 }
 
-/* ===================== CYBER CURSOR ===================== */
+/* ===================== CYBER CURSOR (60FPS GPU ACCELERATED) ===================== */
 function initCyberCursor() {
   const cursor = $('cyberCursor');
   if (!cursor) return;
 
+  let targetX = -100;
+  let targetY = -100;
+  let rafPending = false;
+
+  function renderCursor() {
+    cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+    rafPending = false;
+  }
+
   window.addEventListener('mousemove', (e) => {
+    targetX = e.clientX;
+    targetY = e.clientY;
     document.body.classList.add('cursor-active');
-    cursor.style.left = `${e.clientX}px`;
-    cursor.style.top = `${e.clientY}px`;
-  });
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(renderCursor);
+    }
+  }, { passive: true });
 
   document.addEventListener('mouseleave', () => {
     document.body.classList.remove('cursor-active');
   });
 
-  const interactiveSelector = 'button, a, input, select, label, textarea, .qa, .dropzone, .nav-item, .kpi, .icon-btn, .clickable, [role="button"]';
+  const interactiveSelector = 'button, a, input, select, label, textarea, .qa, .dropzone, .nav-item, .kpi, .icon-btn, .clickable, .bug-entity, [role="button"]';
   document.addEventListener('mouseover', (e) => {
     if (e.target.closest && e.target.closest(interactiveSelector)) {
       document.body.classList.add('cursor-hover');
     }
-  });
+  }, { passive: true });
   document.addEventListener('mouseout', (e) => {
     if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(interactiveSelector)) {
       document.body.classList.remove('cursor-hover');
     }
+  }, { passive: true });
+}
+
+/* ===================== AUTH & NEUMORPHIC LOGIN CONTROLLER ===================== */
+let currentUser = null;
+let lockoutInterval = null;
+
+function setCharacterMood(char, mood, text) {
+  const pod = $(`charPod${char}`);
+  const bubble = $(`charBubble${char}`);
+  if (!pod || !bubble) return;
+
+  if (text) bubble.textContent = text;
+  pod.classList.add('speaking');
+  clearTimeout(pod._speakTimeout);
+  pod._speakTimeout = setTimeout(() => {
+    pod.classList.remove('speaking');
+  }, 3500);
+}
+
+function initNeumorphicAuth() {
+  const overlay = $('neuLoginOverlay');
+  const form = $('neuLoginForm');
+  const usernameInput = $('neuUsername');
+  const passwordInput = $('neuPassword');
+  const togglePwdBtn = $('togglePasswordBtn');
+  const togglePwdIcon = $('togglePasswordIcon');
+  const alertBox = $('loginAlertBox');
+  const alertText = $('loginAlertText');
+  const lockoutBar = $('loginLockoutBar');
+  const lockoutTimer = $('lockoutTimer');
+  const topbarPill = $('authUserPill');
+  const topbarUsername = $('topbarUsername');
+  const topbarUserRole = $('topbarUserRole');
+  const topbarLogoutBtn = $('topbarLogoutBtn');
+  const settingsLogoutBtn = $('settingsLogoutBtn');
+  const changePasswordForm = $('changePasswordForm');
+
+  // Interactive Character Reactions on Input Focus & Typing
+  if (usernameInput) {
+    usernameInput.addEventListener('focus', () => {
+      setCharacterMood('Bit', 'focus', 'Analyzing telemetry credentials... 👓');
+    });
+    usernameInput.addEventListener('input', () => {
+      const val = usernameInput.value.trim().toLowerCase();
+      if (val === 'admin') {
+        setCharacterMood('Bit', 'alert', 'Administrator access profile detected! ⚡');
+      } else if (val === 'analyst') {
+        setCharacterMood('Bit', 'info', 'SOC Analyst operator profile ready.');
+      } else if (val === 'viewer') {
+        setCharacterMood('Bit', 'info', 'Read-Only Audit viewer profile.');
+      }
+    });
+  }
+
+  if (passwordInput) {
+    passwordInput.addEventListener('focus', () => {
+      setCharacterMood('Glitch', 'peek', 'Secret keyphrase! I will look away 🙈');
+      const avatar = document.querySelector('#charPodGlitch .neu-char-avatar');
+      if (avatar) avatar.style.transform = 'scale(0.92) rotate(-8deg)';
+    });
+    passwordInput.addEventListener('blur', () => {
+      const avatar = document.querySelector('#charPodGlitch .neu-char-avatar');
+      if (avatar) avatar.style.transform = '';
+    });
+    passwordInput.addEventListener('input', () => {
+      if (passwordInput.value.length > 8) {
+        setCharacterMood('Glitch', 'happy', 'High entropy keyphrase! Looking solid 🛡️');
+      }
+    });
+  }
+
+  // Password visibility toggle
+  if (togglePwdBtn && passwordInput) {
+    togglePwdBtn.addEventListener('click', () => {
+      const isPwd = passwordInput.getAttribute('type') === 'password';
+      passwordInput.setAttribute('type', isPwd ? 'text' : 'password');
+      if (togglePwdIcon) {
+        togglePwdIcon.setAttribute('data-lucide', isPwd ? 'eye-off' : 'eye');
+        lucide.createIcons();
+      }
+    });
+  }
+
+  // Pre-configured credential chip click
+  document.querySelectorAll('.neu-cred-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      if (usernameInput) usernameInput.value = chip.dataset.user;
+      if (passwordInput) passwordInput.value = chip.dataset.pass;
+      setCharacterMood('Scout', 'ready', `Autofilled ${chip.dataset.user} profile. Click Authenticate!`);
+      if (alertBox) alertBox.style.display = 'none';
+    });
   });
+
+  // Login Form Submission
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+
+      if (!username || !password) {
+        showLoginError('Please enter both username and password.');
+        return;
+      }
+
+      if (alertBox) alertBox.style.display = 'none';
+      setCharacterMood('Glitch', 'working', 'Hashing keyphrase and verifying credentials...');
+
+      try {
+        const { status, data } = await api.login(username, password);
+
+        if (status === 200 && data.ok) {
+          currentUser = data.data.user;
+          updateAuthUI(currentUser);
+          setCharacterMood('Scout', 'success', 'Identity confirmed! SOC console unlocked 🛡️');
+          toast('success', 'Authentication Successful', `Welcome back, ${currentUser.username} (${currentUser.role}).`);
+
+          // Animate transition from login into the dashboard with The Three Bugs celebration
+          setTimeout(() => {
+            animateLoginToDashboardTransition();
+          }, 350);
+        } else if (status === 429) {
+          // Throttled / Lockout
+          const retryIn = data.error?.retry_after || 60;
+          startLockoutCountdown(retryIn);
+          setCharacterMood('Scout', 'lockout', 'BRUTE FORCE DETECTED: Throttle active! 🚨');
+        } else {
+          // Generic failure message (SECURITY-1 requirement: never leak username existence)
+          showLoginError(data.error?.message || 'Invalid username or password.');
+          setCharacterMood('Glitch', 'error', 'Access denied. Generic error logged 🛑');
+          if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.focus();
+          }
+        }
+      } catch (err) {
+        showLoginError('Connection failed. Server may be unreachable.');
+      }
+    });
+  }
+
+  function showLoginError(msg) {
+    if (alertBox && alertText) {
+      alertText.textContent = msg;
+      alertBox.style.display = 'flex';
+      lucide.createIcons();
+    }
+  }
+
+  function startLockoutCountdown(seconds) {
+    if (lockoutInterval) clearInterval(lockoutInterval);
+    let rem = seconds;
+    if (lockoutBar && lockoutTimer) {
+      lockoutTimer.textContent = rem;
+      lockoutBar.style.display = 'flex';
+    }
+    const btn = $('neuLoginSubmitBtn');
+    if (btn) btn.disabled = true;
+
+    lockoutInterval = setInterval(() => {
+      rem--;
+      if (lockoutTimer) lockoutTimer.textContent = rem;
+      if (rem <= 0) {
+        clearInterval(lockoutInterval);
+        if (lockoutBar) lockoutBar.style.display = 'none';
+        if (btn) btn.disabled = false;
+        if (alertBox) alertBox.style.display = 'none';
+      }
+    }, 1000);
+  }
+
+  // Logout Handlers
+  async function performLogout() {
+    try {
+      await api.logout();
+    } catch (_) {}
+    currentUser = null;
+    toast('info', 'Logged Out', 'Session ended safely.');
+    if (overlay) overlay.classList.remove('hidden');
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
+    updateAuthUI(null);
+  }
+
+  if (topbarLogoutBtn) topbarLogoutBtn.addEventListener('click', performLogout);
+  if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', performLogout);
+
+  // Change Password Handler (Settings View)
+  if (changePasswordForm) {
+    changePasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const curr = $('currentPasswordInput') ? $('currentPasswordInput').value : '';
+      const newP = $('newPasswordInput') ? $('newPasswordInput').value : '';
+      const confP = $('confirmPasswordInput') ? $('confirmPasswordInput').value : '';
+
+      if (newP !== confP) {
+        toast('error', 'Validation Error', 'New passwords do not match.');
+        return;
+      }
+      if (newP.length < 8) {
+        toast('error', 'Weak Password', 'Password must be at least 8 characters long.');
+        return;
+      }
+
+      try {
+        const { status, data } = await api.changePassword(curr, newP);
+        if (status === 200 && data.ok) {
+          toast('success', 'Password Updated', 'Session invalidated for security. Please log in again.');
+          changePasswordForm.reset();
+          // SECURITY-1 requires re-authentication after password change
+          setTimeout(() => {
+            performLogout();
+          }, 1200);
+        } else {
+          toast('error', 'Update Failed', data.error?.message || 'Failed to change password.');
+        }
+      } catch (err) {
+        toast('error', 'Error', 'Failed to communicate with authentication server.');
+      }
+    });
+  }
+
+  // Check initial session
+  checkSession();
+}
+
+async function checkSession() {
+  const overlay = $('neuLoginOverlay');
+  try {
+    const res = await api.me();
+    if (res.ok && res.data?.user) {
+      currentUser = res.data.user;
+      updateAuthUI(currentUser);
+      if (overlay) overlay.classList.add('hidden');
+    } else {
+      if (overlay) overlay.classList.remove('hidden');
+      updateAuthUI(null);
+    }
+  } catch (e) {
+    if (overlay) overlay.classList.remove('hidden');
+    updateAuthUI(null);
+  }
+}
+
+function updateAuthUI(user) {
+  const topbarUser = $('topbarUsername');
+  const topbarRole = $('topbarUserRole');
+  const settingsUser = $('settingsUsername');
+  const settingsRole = $('settingsUserRoleBadge');
+
+  if (user) {
+    if (topbarUser) topbarUser.textContent = user.username;
+    if (topbarRole) topbarRole.textContent = user.role;
+    if (settingsUser) settingsUser.textContent = user.username;
+    if (settingsRole) settingsRole.textContent = user.role;
+  } else {
+    if (topbarUser) topbarUser.textContent = 'Guest';
+    if (topbarRole) topbarRole.textContent = 'Unauthenticated';
+    if (settingsUser) settingsUser.textContent = 'Not Logged In';
+    if (settingsRole) settingsRole.textContent = 'None';
+  }
 }
 
 /* ===================== INIT ===================== */
@@ -1059,6 +1512,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initLandingIntro();
   initCyberCanvas();
   initCyberCursor();
+  initNeumorphicAuth();
   bindAnalyzerFilters();
   bindThreatFilters();
   bindUploader();

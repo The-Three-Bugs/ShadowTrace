@@ -18,7 +18,7 @@
 <!-- landing intro overlay -->
 <div class="landing-intro" id="landingIntroOverlay">
   <div class="landing-video-wrap">
-    <video id="landingVideo" autoplay loop muted playsinline src="{{ url_for('static', filename='3Bugs.mp4') }}"></video>
+    <video id="landingVideo" autoplay loop muted playsinline preload="auto" src="{{ url_for('static', filename='3Bugs.mp4') }}"></video>
   </div>
   <div class="landing-content">
     <div class="landing-logo-wrap" style="width: 100px; height: 100px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 35px rgba(34,211,238,0.7), 0 0 60px rgba(139,92,246,0.5); border: 2.5px solid rgba(34,211,238,0.7); margin-bottom: 6px;">
@@ -136,6 +136,19 @@
         <button class="icon-btn" id="refreshBtn" title="Refresh">
           <i data-lucide="refresh-cw"></i>
         </button>
+        <!-- Authenticated User Profile Pill -->
+        <div class="auth-user-pill" id="authUserPill" title="Authenticated User Profile">
+          <div class="auth-user-avatar">
+            <i data-lucide="shield"></i>
+          </div>
+          <div class="auth-user-info">
+            <span class="auth-user-name" id="topbarUsername">Guest</span>
+            <span class="auth-user-role" id="topbarUserRole">Analyst</span>
+          </div>
+          <button class="icon-btn auth-logout-btn" id="topbarLogoutBtn" title="Log Out">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
         <div class="avatar" style="overflow: hidden; padding: 0; border: 1.5px solid rgba(34,211,238,0.5); box-shadow: 0 0 12px rgba(34,211,238,0.35);" title="The Three Bugs">
           <img src="{{ url_for('static', filename='logo.jpeg') }}" alt="The Three Bugs Logo" style="width: 100%; height: 100%; object-fit: cover;" />
         </div>
@@ -563,15 +576,73 @@
 
     <!-- ================= SETTINGS ================= -->
     <section class="view" id="view-settings">
-      <div class="card coming-soon">
-        <div class="cs-glow"></div>
-        <i data-lucide="construction"></i>
-        <h2>Settings & Intro</h2>
-        <p>Configuration options for detection thresholds, notification channels, and data retention will be available in a future release.</p>
-        <div style="margin-top: 24px;">
-          <button class="btn primary" id="replayIntroBtn">
-            <i data-lucide="play-circle"></i> Replay The Three Bugs Intro & Animation
-          </button>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px;">
+        <!-- User Account & Security Settings Card -->
+        <div class="card neu-card">
+          <div class="card-head">
+            <div class="flex-gap">
+              <div class="neu-icon-badge cyan"><i data-lucide="key-round"></i></div>
+              <div>
+                <h3 class="card-title">Account Security</h3>
+                <p class="card-sub">Manage credentials & active session security (Member 1)</p>
+              </div>
+            </div>
+            <span class="status-pill status-open" id="settingsUserRoleBadge">Analyst</span>
+          </div>
+          <div style="margin-top: 18px;">
+            <div class="neu-inset-row" style="margin-bottom: 16px;">
+              <span class="modal-label" style="margin: 0;">Active User</span>
+              <span class="modal-val font-mono" id="settingsUsername">Not Logged In</span>
+            </div>
+
+            <form id="changePasswordForm" autocomplete="off" onsubmit="return false;">
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="modal-label" for="currentPasswordInput">Current Password</label>
+                <div class="neu-input-wrap">
+                  <i data-lucide="lock" class="input-icon"></i>
+                  <input type="password" id="currentPasswordInput" class="neu-input" placeholder="Enter current password" required />
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="modal-label" for="newPasswordInput">New Password (min 8 chars)</label>
+                <div class="neu-input-wrap">
+                  <i data-lucide="shield-alert" class="input-icon"></i>
+                  <input type="password" id="newPasswordInput" class="neu-input" placeholder="New secure password" minlength="8" required />
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 18px;">
+                <label class="modal-label" for="confirmPasswordInput">Confirm New Password</label>
+                <div class="neu-input-wrap">
+                  <i data-lucide="shield-check" class="input-icon"></i>
+                  <input type="password" id="confirmPasswordInput" class="neu-input" placeholder="Repeat new password" minlength="8" required />
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="submit" class="btn primary" id="changePasswordBtn">
+                  <i data-lucide="check"></i> Update Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- System & Animation Card -->
+        <div class="card coming-soon">
+          <div class="cs-glow"></div>
+          <i data-lucide="shield-check"></i>
+          <h2>The Three Bugs Operations</h2>
+          <p>Autonomous threat detection engine & real-time telemetry animation suite.</p>
+          <div style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+            <button class="btn primary" id="replayIntroBtn">
+              <i data-lucide="play-circle"></i> Replay Intro & Animation
+            </button>
+            <button class="btn secondary" id="settingsLogoutBtn">
+              <i data-lucide="log-out"></i> Log Out
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -647,6 +718,117 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- ================= NEUMORPHIC CYBER LOGIN OVERLAY ================= -->
+<div class="neu-login-overlay" id="neuLoginOverlay">
+  <div class="neu-login-container">
+    <!-- Interactive Three Bugs Header Stage -->
+    <div class="neu-chars-stage">
+      <div class="neu-char-pod" id="charPodBit" title="Bit · Lead Analyst">
+        <div class="neu-char-bubble" id="charBubbleBit">Systems secure. Ready for authentication!</div>
+        <div class="neu-char-halo"></div>
+        <img src="{{ url_for('static', filename='images/bug_specs.png') }}" alt="Bit" class="neu-char-avatar" />
+        <span class="neu-char-tag">Bit</span>
+      </div>
+
+      <div class="neu-char-pod primary-pod" id="charPodGlitch" title="Glitch · Bug Bounty Hunter">
+        <div class="neu-char-bubble" id="charBubbleGlitch">Enter your credentials to access the SOC.</div>
+        <div class="neu-char-halo glitch-halo"></div>
+        <img src="{{ url_for('static', filename='images/bug_hacker.png') }}" alt="Glitch" class="neu-char-avatar" />
+        <span class="neu-char-tag">Glitch</span>
+      </div>
+
+      <div class="neu-char-pod" id="charPodScout" title="Scout · Perimeter Sentinel">
+        <div class="neu-char-bubble" id="charBubbleScout">Perimeter scan: Nominal. Awaiting login.</div>
+        <div class="neu-char-halo"></div>
+        <img src="{{ url_for('static', filename='images/bug_detective.png') }}" alt="Scout" class="neu-char-avatar" />
+        <span class="neu-char-tag">Scout</span>
+      </div>
+    </div>
+
+    <!-- Main Neumorphic Login Card -->
+    <div class="neu-card neu-login-card">
+      <div class="neu-card-header">
+        <div class="neu-brand-badge">
+          <i data-lucide="shield-check"></i>
+          <span>SHADOWTRACE CONSOLE</span>
+        </div>
+        <h2 class="neu-login-title">Identity & Access Gate</h2>
+        <p class="neu-login-sub">Role-Based Security Console · The Three Bugs</p>
+      </div>
+
+      <div class="neu-alert-box" id="loginAlertBox" style="display: none;">
+        <i data-lucide="alert-octagon" id="loginAlertIcon"></i>
+        <span id="loginAlertText">Invalid username or password.</span>
+      </div>
+
+      <form id="neuLoginForm" autocomplete="off" onsubmit="return false;">
+        <!-- Username input well -->
+        <div class="neu-field">
+          <label class="neu-label" for="neuUsername">Operator Username</label>
+          <div class="neu-input-well">
+            <i data-lucide="user" class="neu-field-icon"></i>
+            <input type="text" id="neuUsername" class="neu-input-inner" placeholder="admin / analyst / viewer" required autofocus />
+          </div>
+        </div>
+
+        <!-- Password input well -->
+        <div class="neu-field">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label class="neu-label" for="neuPassword">Secure Keyphrase</label>
+            <button type="button" class="neu-toggle-pwd" id="togglePasswordBtn" title="Toggle password visibility">
+              <i data-lucide="eye" id="togglePasswordIcon"></i>
+            </button>
+          </div>
+          <div class="neu-input-well">
+            <i data-lucide="lock" class="neu-field-icon"></i>
+            <input type="password" id="neuPassword" class="neu-input-inner" placeholder="••••••••••••" required />
+          </div>
+        </div>
+
+        <!-- Throttle lockout countdown banner -->
+        <div class="neu-lockout-bar" id="loginLockoutBar" style="display: none;">
+          <i data-lucide="clock"></i>
+          <span>Brute-force protection: Locked out. Try again in <strong id="lockoutTimer">60</strong>s</span>
+        </div>
+
+        <!-- Action Button -->
+        <button type="submit" class="neu-btn-submit" id="neuLoginSubmitBtn">
+          <span class="neu-btn-text">Authenticate & Enter</span>
+          <i data-lucide="arrow-right" class="neu-btn-icon"></i>
+        </button>
+      </form>
+
+      <!-- Demo credential hints for review -->
+      <div class="neu-demo-hints">
+        <div class="neu-hint-label">Pre-configured Role Credentials:</div>
+        <div class="neu-chips-row">
+          <button type="button" class="neu-cred-chip" data-user="admin" data-pass="AdminSecret123!" title="Click to autofill Admin">
+            <span class="chip-role">Administrator</span>
+            <span class="chip-user">admin</span>
+          </button>
+          <button type="button" class="neu-cred-chip" data-user="analyst" data-pass="AnalystPass123!" title="Click to autofill Analyst">
+            <span class="chip-role">Analyst</span>
+            <span class="chip-user">analyst</span>
+          </button>
+          <button type="button" class="neu-cred-chip" data-user="viewer" data-pass="ViewerPass123!" title="Click to autofill Viewer">
+            <span class="chip-role">Viewer</span>
+            <span class="chip-user">viewer</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Transition Stage & Cyber Warp -->
+<div class="screen-cyber-warp" id="screenCyberWarp"></div>
+<div class="bug-teleport-stage" id="bugTeleportStage">
+  <div class="bug-warp-tunnel"></div>
+  <div class="bug-flyer" id="bugFlyerBit"><img src="{{ url_for('static', filename='images/bug_specs.png') }}" alt="Bit" /></div>
+  <div class="bug-flyer" id="bugFlyerGlitch"><img src="{{ url_for('static', filename='images/bug_hacker.png') }}" alt="Glitch" /></div>
+  <div class="bug-flyer" id="bugFlyerScout"><img src="{{ url_for('static', filename='images/bug_detective.png') }}" alt="Scout" /></div>
 </div>
 
 <!-- custom cyber cursor -->
