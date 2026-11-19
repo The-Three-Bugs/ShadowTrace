@@ -88,8 +88,14 @@ def get_stats():
 def get_logs():
     search = request.args.get('search', '').strip()
     severity = request.args.get('severity', '').strip()
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 50))
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except (ValueError, TypeError):
+        per_page = 50
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -396,8 +402,14 @@ def get_investigation_events(investigation_id):
     start_date = request.args.get('start_date', '').strip()
     end_date = request.args.get('end_date', '').strip()
     sort_order = request.args.get('sort', 'oldest').strip().lower()
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 50))
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except (ValueError, TypeError):
+        per_page = 50
     
     conn = get_db_connection()
     cursor = conn.cursor()

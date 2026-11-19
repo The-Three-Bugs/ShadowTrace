@@ -353,3 +353,51 @@
 ### Test Results & Final Validation
 - Executed test suite via `python -m unittest tests/test_shadowtrace.py`.
 - **Result:** **7 tests passed successfully (`OK`)** with zero errors.
+
+---
+
+## Part 10: Security Audit & Remediation Report (SECURITY2.md)
+
+### Objectives
+- Access and implement all required security checks and hardening measures defined in `Documentation/Member2/SECURITY2.md` on the current `member2` branch.
+- Identify and fix security vulnerabilities related to input validation, pagination bounds, CSV field length limits, SQL injection prevention, and Cross-Site Scripting (XSS) prevention.
+- Ensure all security changes adhere strictly to `RULES.md` and `ARCHITECTURE.md` without modifying unrelated code.
+- Run automated unit and integration tests to verify all security fixes.
+
+### What the Task Required
+- Perform a thorough security audit of Member 2's components against `SECURITY2.md`.
+- Implement backend input validation and pagination parameter clamping (`page >= 1`, `1 <= per_page <= 200`).
+- Implement CSV field length limits (max 255 characters per field) in `csv_processor.py` to prevent memory exhaustion and buffer overflow vulnerabilities.
+- Implement HTML escaping (`escapeHtml()`) in `static/js/app.js` for all untrusted log, event, and threat data rendered via `innerHTML` to prevent Stored/Reflected XSS attacks.
+- Add comprehensive automated unit tests for security validations.
+
+### What Was Inspected
+- `Documentation/Member2/SECURITY2.md` (Security requirements and guidelines)
+- `Documentation/RULES.md` and `Documentation/ARCHITECTURE.md`
+- `app.py` (API routing, query parameters, pagination)
+- `csv_processor.py` (CSV parsing and record validation)
+- `static/js/app.js` (Frontend rendering and innerHTML usage)
+- `tests/test_shadowtrace.py` (Unit and integration test suite)
+
+### Files Created or Modified
+- **`csv_processor.py`**: Added maximum field length validation (255 characters) for CSV records.
+- **`app.py`**: Added robust pagination parameter parsing and bounds enforcement (`page >= 1`, `1 <= per_page <= 200`).
+- **`static/js/app.js`**: Introduced `escapeHtml()` utility function and applied it across all event, log, and threat table rendering to protect against XSS.
+- **`tests/test_shadowtrace.py`**: Added unit tests (`test_oversized_csv_field_rejection`, `test_pagination_bounds_validation`) verifying security hardening.
+- **`Documentation/Member2/REPORTS/REPORT.md`**: Appended Part 10 security audit and remediation report.
+
+### Issues Found & Resolved
+1. **Unbounded Pagination / Parameter Exhaustion:**
+   - *Issue:* Pagination parameters (`page` and `per_page`) were directly parsed as integers without upper bounds checking, potentially exposing endpoints to resource exhaustion attacks.
+   - *Resolution:* Clamped `page` to `>= 1` and `per_page` between `1` and `200` in `/api/logs` and `/api/investigations/<id>/events`.
+2. **Oversized CSV Field Injection:**
+   - *Issue:* CSV records with excessively long string fields could consume disproportionate memory or cause database issues.
+   - *Resolution:* Added 255-character field length validation checking in `csv_processor.py`, correctly rejecting oversized rows as invalid.
+3. **Cross-Site Scripting (XSS) via Untrusted Log Data:**
+   - *Issue:* Imported CSV log attributes (`username`, `event_type`, `status`, `detection_reason`, etc.) were interpolated directly into template strings assigned to `innerHTML`, allowing potential HTML/JS injection if malicious logs were uploaded.
+   - *Resolution:* Implemented `escapeHtml()` in `static/js/app.js` and escaped all untrusted log and threat fields prior to HTML rendering.
+
+### Test Results & Verification
+- Executed unit and integration test suite via `python -m unittest tests/test_shadowtrace.py`.
+- **Result:** **9 tests passed successfully (`OK`)** with zero errors.
+- Verified timestamp normalization, CSV validation, duplicate/invalid row handling, API endpoints, malformed JSON payload handling, oversized field rejection, and pagination bounds clamping.

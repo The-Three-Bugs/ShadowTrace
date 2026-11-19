@@ -73,7 +73,6 @@ timestamp,username,source_ip,event_type,status
 2026-10-12 10:35:00,admin,192.168.1.10,login,success
 ```
 
-The initial release should use a clearly documented schema.
 
 Do not claim universal compatibility with every vendor's log format.
 

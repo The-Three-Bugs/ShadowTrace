@@ -132,5 +132,22 @@ class TestShadowTraceMember2(unittest.TestCase):
         self.assertFalse(data['ok'])
         self.assertEqual(data['error']['code'], 'INVALID_JSON')
 
+    def test_oversized_csv_field_rejection(self):
+        long_username = "a" * 300
+        sample_csv = f"timestamp,username,source_ip,event_type,status\n2026-10-14 10:00:00,{long_username},192.168.1.10,login,success\n"
+        result = process_csv_content(sample_csv)
+        self.assertEqual(result['total'], 1)
+        self.assertEqual(len(result['valid_records']), 0)
+        self.assertEqual(result['invalid_count'], 1)
+        self.assertIn("Field length exceeds maximum allowed limit", result['invalid_rows'][0]['reason'])
+
+    def test_pagination_bounds_validation(self):
+        res = self.app.get('/api/investigations/1/events?page=-5&per_page=5000')
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['data']['page'], 1)
+        self.assertEqual(data['data']['per_page'], 200) # Capped at 200
+
 if __name__ == '__main__':
     unittest.main()

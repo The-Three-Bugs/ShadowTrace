@@ -13,6 +13,16 @@ const state = {
 /* ===================== UTILITIES ===================== */
 const $ = (id) => document.getElementById(id);
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function toast(type, title, msg) {
   const stack = $('toastStack');
   const el = document.createElement('div');
@@ -323,11 +333,11 @@ async function loadStats() {
     } else {
       tbody.innerHTML = rows.map((r) => `
         <tr>
-          <td class="mono">${r.timestamp || '—'}</td>
-          <td class="mono">${r.source_ip || '—'}</td>
-          <td>${r.event_type || '—'}</td>
+          <td class="mono">${escapeHtml(r.timestamp) || '—'}</td>
+          <td class="mono">${escapeHtml(r.source_ip) || '—'}</td>
+          <td>${escapeHtml(r.event_type) || '—'}</td>
           <td>${sevBadge(r.severity)}</td>
-          <td style="color:var(--txt-2);font-size:12px;">${r.detection_reason || '—'}</td>
+          <td style="color:var(--txt-2);font-size:12px;">${escapeHtml(r.detection_reason) || '—'}</td>
         </tr>`).join('');
     }
     lucide.createIcons();
@@ -349,13 +359,13 @@ async function loadLogs() {
     } else {
       tbody.innerHTML = rows.map((r) => `
         <tr>
-          <td class="mono">${r.timestamp || '—'}</td>
-          <td class="mono">${r.source_ip || '—'}</td>
-          <td>${r.username || '—'}</td>
-          <td>${r.event_type || '—'}</td>
-          <td>${r.status || '—'}</td>
+          <td class="mono">${escapeHtml(r.timestamp) || '—'}</td>
+          <td class="mono">${escapeHtml(r.source_ip) || '—'}</td>
+          <td>${escapeHtml(r.username) || '—'}</td>
+          <td>${escapeHtml(r.event_type) || '—'}</td>
+          <td>${escapeHtml(r.status) || '—'}</td>
           <td>${sevBadge(r.severity)}</td>
-          <td style="color:var(--txt-2);font-size:12px;max-width:280px;">${r.detection_reason || '—'}</td>
+          <td style="color:var(--txt-2);font-size:12px;max-width:280px;">${escapeHtml(r.detection_reason) || '—'}</td>
         </tr>`).join('');
     }
 
@@ -484,13 +494,13 @@ async function loadThreats() {
     } else {
       tbody.innerHTML = rows.map((r) => `
         <tr>
-          <td class="mono">#${r.id}</td>
-          <td class="mono">${r.timestamp || '—'}</td>
-          <td class="mono">${r.source_ip || '—'}</td>
-          <td style="color:var(--txt-0);font-weight:500;">${r.rule_triggered || '—'}</td>
+          <td class="mono">#${escapeHtml(r.id)}</td>
+          <td class="mono">${escapeHtml(r.timestamp) || '—'}</td>
+          <td class="mono">${escapeHtml(r.source_ip) || '—'}</td>
+          <td style="color:var(--txt-0);font-weight:500;">${escapeHtml(r.rule_triggered) || '—'}</td>
           <td>${sevBadge(r.severity)}</td>
-          <td style="color:var(--txt-2);font-size:12px;max-width:320px;">${r.evidence || '—'}</td>
-          <td><span class="sev Informational" style="color:#a78bfa;">${r.status || 'Active'}</span></td>
+          <td style="color:var(--txt-2);font-size:12px;max-width:320px;">${escapeHtml(r.evidence) || '—'}</td>
+          <td><span class="sev Informational" style="color:#a78bfa;">${escapeHtml(r.status) || 'Active'}</span></td>
         </tr>`).join('');
     }
   } catch (e) {
