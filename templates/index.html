@@ -94,6 +94,16 @@
         <span class="nav-glow"></span>
       </button>
 
+      <div class="nav-label" style="margin-top:22px;">Member 4</div>
+      <button class="nav-item" data-view="reports">
+        <i data-lucide="file-text"></i><span>Reports & Export</span>
+        <span class="nav-glow"></span>
+      </button>
+      <button class="nav-item" data-view="audit">
+        <i data-lucide="clock"></i><span>Audit Trail</span>
+        <span class="nav-glow"></span>
+      </button>
+
       <div class="nav-label" style="margin-top:22px;">System</div>
       <button class="nav-item" data-view="settings">
         <i data-lucide="settings-2"></i><span>Settings</span>
@@ -409,6 +419,103 @@
       </div>
     </section>
 
+    <!-- ================= REPORTS & EXPORT (Member 4) ================= -->
+    <section class="view" id="view-reports">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <i data-lucide="file-text"></i>
+          <h2>Investigation Reports &amp; Export</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:18px;">Enter a Run ID to preview, generate a PDF report, or export CSV data for any analysis run.</p>
+
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+          <label style="color:var(--text-secondary);font-size:13px;">Run ID:</label>
+          <input type="number" id="reportRunId" value="1" min="1"
+            style="width:90px;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:14px;">
+          <button class="btn primary" onclick="previewReport()">
+            <i data-lucide="eye"></i> Preview
+          </button>
+          <button class="btn" style="background:#0284c7;color:#fff;" onclick="verifyIntegrity()">
+            <i data-lucide="shield-check"></i> Verify SHA-256 Hash
+          </button>
+          <button class="btn" style="background:var(--accent-red,#dc2626);color:#fff;" onclick="generatePDF()">
+            <i data-lucide="download"></i> Download PDF Report
+          </button>
+        </div>
+
+        <!-- Preview Panel -->
+        <div id="reportPreviewPanel" style="display:none;border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:20px;background:var(--bg-card-2);">
+          <h3 style="margin:0 0 14px;font-size:15px;color:var(--accent-cyan);">Report Preview</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;" id="reportPreviewTable"></table>
+        </div>
+
+        <!-- CSV Exports -->
+        <div class="card-header" style="margin-bottom:12px;">
+          <i data-lucide="download-cloud"></i>
+          <h3 style="font-size:14px;margin:0;">CSV Exports</h3>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn" onclick="exportCSV('events')">
+            <i data-lucide="table"></i> Export Events CSV
+          </button>
+          <button class="btn" onclick="exportCSV('findings')">
+            <i data-lucide="shield-alert"></i> Export Findings CSV
+          </button>
+          <button class="btn" onclick="exportCSV('evidence')">
+            <i data-lucide="file-box"></i> Export Evidence CSV
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= AUDIT TRAIL (Member 4) ================= -->
+    <section class="view" id="view-audit">
+      <div class="card">
+        <div class="card-header">
+          <i data-lucide="clock"></i>
+          <h2>Audit Trail &amp; Activity History</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:18px;">Chronological log of all important actions performed in ShadowTrace.</p>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+          <select id="auditActionFilter"
+            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
+            <option value="">All Action Types</option>
+            <option value="CSV_PROCESSED">CSV Processed</option>
+            <option value="REPORT_GENERATED">Report Generated</option>
+            <option value="EXPORT_EVENTS">Export Events</option>
+            <option value="EXPORT_FINDINGS">Export Findings</option>
+            <option value="EXPORT_EVIDENCE">Export Evidence</option>
+          </select>
+          <input type="date" id="auditDateFrom"
+            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
+          <input type="date" id="auditDateTo"
+            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
+          <button class="btn primary" onclick="loadAuditTrail()">
+            <i data-lucide="filter"></i> Filter
+          </button>
+          <button class="btn" onclick="document.getElementById('auditActionFilter').value='';document.getElementById('auditDateFrom').value='';document.getElementById('auditDateTo').value='';loadAuditTrail()">
+            Reset
+          </button>
+        </div>
+
+        <!-- Activity Table -->
+        <div class="table-wrap">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Timestamp</th><th>Action</th><th>Description</th><th>Record Type</th><th>Record ID</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody">
+              <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">Click Filter to load activity history.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ================= SETTINGS ================= -->
     <section class="view" id="view-settings">
       <div class="card coming-soon">
@@ -444,5 +551,112 @@
 
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/three_bugs.js') }}"></script>
+
+<!-- Member 4 — Reports, Export & Audit Trail JS -->
+<script>
+function getRunId() {
+  return parseInt(document.getElementById('reportRunId').value) || 1;
+}
+
+async function previewReport() {
+  const id = getRunId();
+  const panel = document.getElementById('reportPreviewPanel');
+  const table = document.getElementById('reportPreviewTable');
+  try {
+    const res = await fetch(`/api/investigations/${id}/report`);
+    const json = await res.json();
+    if (!json.ok) { alert('Error: ' + json.error); return; }
+    const d = json.data;
+    const rows = [
+      ['Investigation ID', d.investigation_id],
+      ['Filename / Title', d.title],
+      ['Status', d.status],
+      ['Analyzed At', d.analyzed_at],
+      ['Total Records', d.total_records],
+      ['Valid Records', d.valid_records],
+      ['Invalid Records', d.invalid_records],
+      ['Suspicious Events', d.suspicious_count],
+      ['Total Log Events', d.event_count],
+      ['Threat Findings', d.findings_count],
+      ['Critical Alerts', d.critical_alerts],
+      ['High Alerts', d.high_alerts],
+    ];
+    table.innerHTML = rows.map(([k, v]) =>
+      `<tr>
+        <td style="padding:6px 10px;color:var(--text-muted);width:200px;">${k}</td>
+        <td style="padding:6px 10px;color:var(--text-primary);font-weight:500;">${v ?? 'N/A'}</td>
+      </tr>`
+    ).join('');
+    panel.style.display = 'block';
+  } catch(e) { alert('Failed to fetch preview: ' + e); }
+}
+
+async function verifyIntegrity() {
+  const id = getRunId();
+  try {
+    const res = await fetch(`/api/investigations/${id}/verify-integrity`);
+    const json = await res.json();
+    if (!json.ok && !json.status) {
+      alert('Integrity check error: ' + (json.error || json.message));
+      return;
+    }
+    const color = json.verified ? '#10b981' : '#f59e0b';
+    alert(`[Evidence Integrity Check - Run #${id}]\n\nStatus: ${json.status}\nVerified: ${json.verified ? 'YES (Match)' : 'NO'}\n\nRecorded Hash: ${json.recorded_sha256 || 'None'}\nComputed Hash: ${json.computed_sha256 || 'None'}\n\n${json.message}`);
+  } catch(e) {
+    alert('Integrity verification failed: ' + e);
+  }
+}
+
+async function generatePDF() {
+  const id = getRunId();
+  try {
+    const res = await fetch(`/api/investigations/${id}/reports`, { method: 'POST' });
+    if (!res.ok) { const j = await res.json(); alert('Error: ' + j.error); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `shadowtrace_report_${id}.pdf`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  } catch(e) { alert('PDF generation failed: ' + e); }
+}
+
+function exportCSV(type) {
+  const id = getRunId();
+  window.location.href = `/api/investigations/${id}/exports/${type}`;
+}
+
+async function loadAuditTrail() {
+  const actionType = document.getElementById('auditActionFilter').value;
+  const dateFrom   = document.getElementById('auditDateFrom').value;
+  const dateTo     = document.getElementById('auditDateTo').value;
+  const params = new URLSearchParams();
+  if (actionType) params.append('action_type', actionType);
+  if (dateFrom)   params.append('date_from', dateFrom);
+  if (dateTo)     params.append('date_to', dateTo);
+
+  const tbody = document.getElementById('auditTableBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+  try {
+    const res = await fetch('/api/activity?' + params.toString());
+    const json = await res.json();
+    if (!json.ok || !json.data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">No activity records found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = json.data.map((row, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${row.timestamp}</td>
+        <td><span class="sev-badge sev-medium" style="font-size:11px;">${row.action_type}</span></td>
+        <td>${row.description || '—'}</td>
+        <td>${row.related_record_type || '—'}</td>
+        <td>${row.related_record_id ?? '—'}</td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#ef4444;padding:20px;">Error loading activity: ${e}</td></tr>`;
+  }
+}
+</script>
 </body>
 </html>
