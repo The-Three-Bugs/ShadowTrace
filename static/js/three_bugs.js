@@ -419,25 +419,28 @@
         this.isPerched = false;
         this.perchTimer = 8 + Math.random() * 14;
       } else {
-        // Select an interactive card on screen
-        const candidates = document.querySelectorAll('.kpi, .dropzone, .rule-chip, .team-continuous-badge, .avatar, #qaAnalyze');
-        if (candidates.length > 0 && Math.random() < 0.65) {
-          const target = candidates[Math.floor(Math.random() * candidates.length)];
-          const r = target.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight) {
-            this.isPerched = true;
-            this.perchTargetEl = target;
-            this.perchTimer = 4 + Math.random() * 5;
-            setTimeout(() => {
-              if (this.isPerched && Math.random() < 0.75) {
-                this.sayRandomQuote();
-              }
-            }, 1200);
-            return;
+        // Cached candidate query with light probability check
+        if (Math.random() < 0.45) {
+          const candidates = document.querySelectorAll('.kpi, .dropzone, .rule-chip, .avatar');
+          if (candidates.length > 0) {
+            const target = candidates[Math.floor(Math.random() * candidates.length)];
+            const r = target.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight) {
+              this.isPerched = true;
+              this.perchTargetEl = target;
+              this.perchTimer = 3 + Math.random() * 4;
+              setTimeout(() => {
+                if (this.isPerched && Math.random() < 0.6) {
+                  this.sayRandomQuote();
+                }
+              }, 1200);
+              return;
+            }
           }
         }
         this.perchTimer = 6 + Math.random() * 10;
       }
+    }
     }
   }
 
