@@ -90,8 +90,10 @@ def process_csv_content(file_stream):
             event_type = row[col_map['event_type']].strip() if len(row) > col_map['event_type'] else ''
             status = row[col_map['status']].strip() if len(row) > col_map['status'] else 'unknown'
 
-            # Validation checks
+            # Validation checks & field length limits
             reasons = []
+            if len(username) > 255 or len(source_ip) > 255 or len(event_type) > 255 or len(status) > 255 or len(raw_ts) > 255:
+                reasons.append("Field length exceeds maximum allowed limit (255 characters)")
             if not source_ip:
                 reasons.append("Missing source_ip")
             if not event_type:

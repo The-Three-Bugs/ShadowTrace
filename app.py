@@ -746,6 +746,10 @@ def upload_file():
         return jsonify({'error': 'Invalid file format. Please upload a .csv file.'}), 400
         
     try:
+        raw_bytes = file.read()
+        file.seek(0)
+        sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
+        
         parsed = process_csv_content(file)
         valid_records = parsed['valid_records']
         total_records = parsed['total']
@@ -766,10 +770,26 @@ def upload_file():
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (investigation_id, file.filename, total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed'))
+            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status, sha256_hash, stored_filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (investigation_id, file.filename, total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed', sha256_hash, file.filename))
         run_id = cursor.lastrowid
+        
+        cursor.execute('''
+            INSERT INTO evidence (run_id, original_filename, stored_filename, file_path, file_size, sha256_hash, verification_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (run_id, file.filename, file.filename, file.filename, len(raw_bytes), sha256_hash, 'Verified'))
+
+        # Audit logs (Member 4)
+        cursor.execute('''
+            INSERT INTO audit_trail (run_id, action_type, description, related_record_type, related_record_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (run_id, 'EVIDENCE_UPLOADED', f'Evidence file uploaded: {file.filename}', 'evidence', run_id))
+
+        cursor.execute('''
+            INSERT INTO audit_trail (run_id, action_type, description, related_record_type, related_record_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (run_id, 'CSV_PROCESSED', f'Processed {total_records} rows ({len(final_records)} valid, {invalid_count} invalid)', 'analysis_runs', run_id))
         
         event_id_map = []
         for rec in final_records:
@@ -828,8 +848,12 @@ def load_sample():
         return jsonify({'error': f'Sample dataset file not found at {sample_path}.'}), 404
         
     try:
-        with open(sample_path, 'r', encoding='utf-8') as f:
-            parsed = process_csv_content(f)
+        with open(sample_path, 'rb') as f_raw:
+            raw_bytes = f_raw.read()
+        sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
+
+        stream = io.StringIO(raw_bytes.decode('utf-8', errors='replace'))
+        parsed = process_csv_content(stream)
             
         valid_records = parsed['valid_records']
         total_records = parsed['total']
@@ -847,10 +871,20 @@ def load_sample():
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (investigation_id, 'sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed'))
+            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status, sha256_hash, stored_filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (investigation_id, 'sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed', sha256_hash, sample_path))
         run_id = cursor.lastrowid
+        
+        cursor.execute('''
+            INSERT INTO evidence (run_id, original_filename, stored_filename, file_path, file_size, sha256_hash, verification_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (run_id, 'sample_logs.csv (Demo)', 'sample_logs.csv', sample_path, len(raw_bytes), sha256_hash, 'Verified'))
+
+        cursor.execute('''
+            INSERT INTO audit_trail (run_id, action_type, description, related_record_type, related_record_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (run_id, 'CSV_PROCESSED', 'Built-in sample dataset loaded and analyzed.', 'analysis_runs', run_id))
         
         event_id_map = []
         for rec in final_records:
@@ -2013,6 +2047,16 @@ def verify_evidence_integrity(run_id):
             'verified': False,
             'message': 'No physical file stored for this run.'
         })
+
+    # Resolve relative paths safely
+    if not os.path.isabs(file_path):
+        candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_path)
+        if os.path.exists(candidate):
+            file_path = candidate
+        else:
+            cand2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', file_path)
+            if os.path.exists(cand2):
+                file_path = cand2
 
     if not os.path.exists(file_path):
         conn.close()

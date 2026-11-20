@@ -450,5 +450,84 @@ class TestShadowTraceMember2(unittest.TestCase):
         self.assertEqual(res_ev.status_code, 200)
         self.assertEqual(res_ev.get_json()['data']['item']['investigation_id'], inv_id)
 
+    # =========================================================================
+    # MEMBER 4 TESTS (Reports, Export, Audit Trail & Security)
+    # =========================================================================
+
+    def test_member4_report_preview_and_generation(self):
+        # 1. Load sample dataset to have analysis runs
+        res_sample = self.app.post('/api/load-sample')
+        self.assertEqual(res_sample.status_code, 200)
+
+        # 2. Test Report Preview
+        res_prev = self.app.get('/api/investigations/1/report')
+        self.assertEqual(res_prev.status_code, 200)
+        prev_data = json.loads(res_prev.data)
+        self.assertTrue(prev_data['ok'])
+        self.assertIn('event_count', prev_data['data'])
+        self.assertIn('findings_count', prev_data['data'])
+        self.assertEqual(prev_data['data']['investigation_id'], 1)
+
+        # 3. Test PDF Report Generation
+        res_pdf = self.app.post('/api/investigations/1/reports')
+        self.assertEqual(res_pdf.status_code, 200)
+        self.assertEqual(res_pdf.mimetype, 'application/pdf')
+        self.assertTrue(len(res_pdf.data) > 100)
+
+    def test_member4_csv_exports(self):
+        self.app.post('/api/load-sample')
+
+        # Test Events CSV export
+        res_events = self.app.get('/api/investigations/1/exports/events')
+        self.assertEqual(res_events.status_code, 200)
+        self.assertEqual(res_events.mimetype, 'text/csv')
+        self.assertIn(b'timestamp', res_events.data)
+
+        # Test Findings CSV export
+        res_findings = self.app.get('/api/investigations/1/exports/findings')
+        self.assertEqual(res_findings.status_code, 200)
+        self.assertEqual(res_findings.mimetype, 'text/csv')
+        self.assertIn(b'rule_triggered', res_findings.data)
+
+        # Test Evidence CSV export
+        res_ev = self.app.get('/api/investigations/1/exports/evidence')
+        self.assertEqual(res_ev.status_code, 200)
+        self.assertEqual(res_ev.mimetype, 'text/csv')
+        self.assertIn(b'filename', res_ev.data)
+
+    def test_member4_audit_trail_and_backup(self):
+        self.app.post('/api/load-sample')
+
+        # Test Global Activity
+        res_act = self.app.get('/api/activity')
+        self.assertEqual(res_act.status_code, 200)
+        act_data = json.loads(res_act.data)
+        self.assertTrue(act_data['ok'])
+        self.assertTrue(len(act_data['data']) > 0)
+
+        # Test Investigation Activity
+        res_inv_act = self.app.get('/api/investigations/1/activity')
+        self.assertEqual(res_inv_act.status_code, 200)
+        inv_act_data = json.loads(res_inv_act.data)
+        self.assertTrue(inv_act_data['ok'])
+
+        # Test Database Backup
+        res_bck = self.app.post('/api/admin/backup')
+        self.assertEqual(res_bck.status_code, 200)
+        bck_data = json.loads(res_bck.data)
+        self.assertTrue(bck_data['ok'])
+        self.assertIn('backup_file', bck_data)
+
+    def test_member4_evidence_integrity_verification(self):
+        self.app.post('/api/load-sample')
+
+        # Verify integrity
+        res_int = self.app.get('/api/investigations/1/verify-integrity')
+        self.assertEqual(res_int.status_code, 200)
+        int_data = json.loads(res_int.data)
+        self.assertTrue(int_data['ok'])
+        self.assertTrue(int_data['verified'])
+        self.assertEqual(int_data['status'], 'VERIFIED_MATCH')
+
 if __name__ == '__main__':
     unittest.main()
