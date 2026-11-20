@@ -26,7 +26,42 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'Analyst',
+            email TEXT DEFAULT '',
+            totp_secret TEXT DEFAULT '',
+            mfa_enabled INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Safe migrations for existing databases
+    for col_def in [
+        "ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0"
+    ]:
+        try:
+            cursor.execute(col_def)
+        except Exception:
+            pass
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS password_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            password_hash TEXT NOT NULL,
+            changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     ''')
 
@@ -192,9 +227,8 @@ def init_db():
             suspicious_count INTEGER DEFAULT 0,
             status TEXT DEFAULT 'Completed',
             sha256_hash TEXT,
-            stored_filename TEXT
+            stored_filename TEXT,
             rules_evaluated INTEGER DEFAULT 3,
-            status TEXT DEFAULT 'Completed',
             FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE SET NULL,
             FOREIGN KEY (evidence_id) REFERENCES evidence_files(id) ON DELETE SET NULL
         )
@@ -209,6 +243,10 @@ def init_db():
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN rules_evaluated INTEGER DEFAULT 3")
     if 'status' not in ar_columns:
         cursor.execute("ALTER TABLE analysis_runs ADD COLUMN status TEXT DEFAULT 'Completed'")
+    if 'sha256_hash' not in ar_columns:
+        cursor.execute("ALTER TABLE analysis_runs ADD COLUMN sha256_hash TEXT")
+    if 'stored_filename' not in ar_columns:
+        cursor.execute("ALTER TABLE analysis_runs ADD COLUMN stored_filename TEXT")
     
     # 6. Log events table (Member 2 & 3)
     cursor.execute('''

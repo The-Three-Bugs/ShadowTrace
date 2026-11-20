@@ -424,6 +424,52 @@
   box-shadow: 0 12px 35px rgba(0, 0, 0, 0.6), 0 0 30px rgba(34, 211, 238, 0.35);
 }
 
+.bugs-hud-bar.minimized {
+  right: 0;
+  border-radius: 999px 0 0 999px;
+  padding: 6px 8px;
+}
+.bugs-hud-bar.minimized > *:not(#hudMinimizeBtn) {
+  display: none !important;
+}
+
+/* Lively Stalking Eyes Overlay on Bugs */
+.bug-stalk-eyes {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.bug-entity:hover .bug-stalk-eyes,
+.bug-entity.peeking .bug-stalk-eyes {
+  opacity: 1;
+}
+.bug-eye {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #22d3ee;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.bug-pupil {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #05070f;
+  transition: transform 0.08s linear;
+}
+
 .hud-badge {
   display: flex;
   align-items: center;

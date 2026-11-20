@@ -63,7 +63,7 @@ def sanitize_csv_field(value) -> str:
 def add_security_headers(response):
     """Attach security headers to every response (Member 4 — SECURITY4)."""
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Content-Security-Policy'] = (
@@ -128,41 +128,72 @@ def add_security_headers(response):
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
 
+def is_api_request():
+    """Determine if the request expects JSON or is targeting an API route."""
+    return request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json'
+
 @app.errorhandler(400)
 def bad_request(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('BAD_REQUEST', 'Low', f'Path: {request.path}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'BAD_REQUEST', 'message': str(e.description if hasattr(e, 'description') else 'Invalid request.')}}), 400
+    msg = str(e.description if hasattr(e, 'description') else 'Invalid request.')
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'BAD_REQUEST', 'message': msg}}), 400
+    return render_template('error.html', code=400, title='Bad Request', description=msg), 400
+
+@app.errorhandler(403)
+def forbidden(e):
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('FORBIDDEN', 'Medium', f'Path: {request.path}', client_ip)
+    msg = str(e.description if hasattr(e, 'description') else 'You do not have permission to access this resource.')
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'FORBIDDEN', 'message': msg}}), 403
+    return render_template('error.html', code=403, title='Access Forbidden', description=msg), 403
 
 @app.errorhandler(404)
 def not_found(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('NOT_FOUND', 'Low', f'Path: {request.path}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'Requested resource not found.'}}), 404
+    msg = 'The requested endpoint or resource was not found on this server.'
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'Requested resource not found.'}}), 404
+    return render_template('error.html', code=404, title='Resource Not Found', description=msg), 404
 
 @app.errorhandler(405)
 def method_not_allowed(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('METHOD_NOT_ALLOWED', 'Low', f'Path: {request.path}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'METHOD_NOT_ALLOWED', 'message': 'HTTP method not allowed for this endpoint.'}}), 405
+    msg = 'HTTP method not allowed for this route.'
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'METHOD_NOT_ALLOWED', 'message': 'HTTP method not allowed for this endpoint.'}}), 405
+    return render_template('error.html', code=405, title='Method Not Allowed', description=msg), 405
 
 @app.errorhandler(413)
 def payload_too_large(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('PAYLOAD_TOO_LARGE', 'Medium', f'Path: {request.path}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'PAYLOAD_TOO_LARGE', 'message': 'File or request body exceeds the maximum permitted size (16MB).'}}), 413
+    msg = 'Payload exceeds the maximum permitted size limit (16MB).'
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'PAYLOAD_TOO_LARGE', 'message': msg}}), 413
+    return render_template('error.html', code=413, title='Payload Too Large', description=msg), 413
 
 @app.errorhandler(429)
 def rate_limit_exceeded(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('RATE_LIMIT_EXCEEDED', 'High', f'Endpoint: {request.endpoint}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests. Please wait before retrying.'}}), 429
+    msg = 'Too many requests received in a short period. Please throttle your requests.'
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests. Please wait before retrying.'}}), 429
+    return render_template('error.html', code=429, title='Rate Limit Exceeded', description=msg), 429
 
 @app.errorhandler(500)
 def internal_server_error(e):
     client_ip = request.remote_addr or 'unknown'
     log_security_event('INTERNAL_SERVER_ERROR', 'Critical', f'Path: {request.path}', client_ip)
-    return jsonify({'ok': False, 'error': {'code': 'INTERNAL_SERVER_ERROR', 'message': 'An internal server error occurred.'}}), 500
+    msg = 'An unexpected internal server error occurred within the security console.'
+    if is_api_request():
+        return jsonify({'ok': False, 'error': {'code': 'INTERNAL_SERVER_ERROR', 'message': 'An internal server error occurred.'}}), 500
+    return render_template('error.html', code=500, title='Internal Server Error', description=msg), 500
 
 @app.route('/api/security/audit-logs', methods=['GET'])
 def get_security_audit_logs():
@@ -290,21 +321,53 @@ def api_login():
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
     user = cursor.fetchone()
-    conn.close()
     
     if not user or not check_password_hash(user['password_hash'], password):
         record_failed_attempt(throttle_key)
         log_security_event('LOGIN_FAILED', 'Medium', f'Failed login attempt for username: {username}', client_ip)
+        err_msg = 'Invalid username or password.'
+        if user:
+            cursor.execute('''
+                SELECT password_hash, changed_at FROM password_history
+                WHERE user_id = ? AND changed_at >= datetime('now', '-30 days')
+                ORDER BY id DESC
+            ''', (user['id'],))
+            for hist in cursor.fetchall():
+                if check_password_hash(hist['password_hash'], password):
+                    try:
+                        changed_dt = datetime.fromisoformat(str(hist['changed_at']).replace('Z', ''))
+                        days_ago = max(0, (datetime.utcnow() - changed_dt).days)
+                        when_str = 'today' if days_ago == 0 else f'{days_ago} day{"s" if days_ago != 1 else ""} ago'
+                        err_msg = f'Incorrect password — this is an old password that was changed {when_str}.'
+                    except Exception:
+                        err_msg = 'Incorrect password — this is an old password that was recently changed.'
+                    break
+        conn.close()
         return jsonify({
             'ok': False,
             'error': {
                 'code': 'INVALID_CREDENTIALS',
-                'message': 'Invalid username or password.'
+                'message': err_msg
             }
         }), 401
         
+    conn.close()
     clear_throttle(throttle_key)
-    
+
+    # Check if MFA is enabled for this user
+    if user['mfa_enabled']:
+        has_totp = bool(user['totp_secret'])
+        has_email = bool(user['email'])
+        session['pending_mfa_user_id'] = user['id']
+        return jsonify({
+            'ok': True,
+            'data': {
+                'mfa_required': True,
+                'username': user['username'],
+                'methods': {'totp': has_totp, 'email': has_email}
+            }
+        })
+
     # Session security: regenerate session
     session.regenerate = True if hasattr(session, 'regenerate') else None
     session['user_id'] = user['id']
@@ -319,10 +382,96 @@ def api_login():
             'user': {
                 'id': user['id'],
                 'username': user['username'],
-                'role': user['role']
+                'role': user['role'],
+                'mfa_enabled': bool(user['mfa_enabled'])
             }
         }
     })
+
+
+@app.route('/api/auth/login/send-otp', methods=['POST'])
+def api_login_send_otp():
+    uid = session.get('pending_mfa_user_id')
+    if not uid:
+        return jsonify({'ok': False, 'error': {'code': 'NO_PENDING_MFA', 'message': 'No pending MFA login session.'}}), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, email FROM users WHERE id = ?', (uid,))
+    user = cursor.fetchone()
+    if not user or not user['email']:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NO_EMAIL', 'message': 'No email configured for this account.'}}), 400
+
+    otp_code = f"{int.from_bytes(os.urandom(3), 'big') % 1000000:06d}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    cursor.execute('INSERT INTO otp_codes (user_id, code, expires_at) VALUES (?, ?, ?)', (user['id'], otp_code, expires_at.isoformat()))
+    conn.commit()
+    conn.close()
+
+    ok, err_msg = send_otp_email(user['email'], user['username'], otp_code)
+    if not ok:
+        return jsonify({'ok': False, 'error': {'code': 'EMAIL_FAILED', 'message': f'Failed to send OTP: {err_msg}'}}), 500
+    return jsonify({'ok': True, 'data': {'message': f'OTP sent to {user["email"]}.'}})
+
+
+@app.route('/api/auth/login/mfa', methods=['POST'])
+def api_login_mfa():
+    uid = session.get('pending_mfa_user_id')
+    if not uid:
+        return jsonify({'ok': False, 'error': {'code': 'NO_PENDING_MFA', 'message': 'No pending MFA login session.'}}), 400
+    data = request.get_json(silent=True) or {}
+    code = (data.get('code') or '').strip()
+    method = (data.get('method') or 'totp').strip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (uid,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    verified = False
+    if method == 'totp' and user['totp_secret'] and verify_totp(user['totp_secret'], code):
+        verified = True
+    elif method == 'email':
+        cursor.execute('SELECT id, expires_at FROM otp_codes WHERE user_id = ? AND code = ? AND used = 0 ORDER BY id DESC LIMIT 1', (uid, code))
+        otp_row = cursor.fetchone()
+        if otp_row and datetime.fromisoformat(otp_row['expires_at']) > datetime.utcnow():
+            verified = True
+            cursor.execute('UPDATE otp_codes SET used = 1 WHERE id = ?', (otp_row['id'],))
+            conn.commit()
+
+    conn.close()
+    if not verified:
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_MFA', 'message': 'Invalid or expired verification code.'}}), 401
+
+    session.pop('pending_mfa_user_id', None)
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+    log_security_event('LOGIN_SUCCESS_MFA', 'Low', f'MFA login ({method}) for {user["username"]}', request.remote_addr or 'unknown')
+    return jsonify({'ok': True, 'data': {'user': {'id': user['id'], 'username': user['username'], 'role': user['role'], 'mfa_enabled': True}}})
+
+
+@app.route('/api/auth/mfa/toggle', methods=['POST'])
+@login_required
+def api_mfa_toggle():
+    data = request.get_json(silent=True) or {}
+    enable = bool(data.get('enabled'))
+    user_id = session.get('user_id')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT totp_secret, email FROM users WHERE id = ?', (user_id,))
+    row = cursor.fetchone()
+    if enable and not (row['totp_secret'] or row['email']):
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NO_MFA_METHOD', 'message': 'Connect Google Authenticator or add an email first before enabling MFA.'}}), 400
+    cursor.execute('UPDATE users SET mfa_enabled = ? WHERE id = ?', (1 if enable else 0, user_id))
+    conn.commit()
+    conn.close()
+    log_security_event('MFA_TOGGLED', 'Medium', f'User {session.get("username")} {"enabled" if enable else "disabled"} MFA', request.remote_addr or 'unknown')
+    return jsonify({'ok': True, 'data': {'mfa_enabled': enable}})
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
@@ -403,27 +552,469 @@ def api_change_password():
         }
     })
 
+@app.route('/api/auth/change-username', methods=['POST'])
+@login_required
+def api_change_username():
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get('username') or '').strip()
+    if not new_username or len(new_username) < 3:
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_USERNAME', 'message': 'Username must be at least 3 characters.'}}), 400
+
+    user_id = session.get('user_id')
+    old_username = session.get('username')
+    if new_username == old_username:
+        return jsonify({'ok': False, 'error': {'code': 'SAME_USERNAME', 'message': 'New username is the same as your current username.'}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM users WHERE username = ? AND id != ?', (new_username, user_id))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'DUPLICATE_USER', 'message': f'Username "{new_username}" is already taken.'}}), 409
+
+    cursor.execute('UPDATE users SET username = ? WHERE id = ?', (new_username, user_id))
+    conn.commit()
+    conn.close()
+
+    session['username'] = new_username
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('USERNAME_CHANGED', 'Low', f'User {old_username} changed username to {new_username}', client_ip)
+    return jsonify({'ok': True, 'data': {'username': new_username, 'role': session.get('role')}})
+
+
+SOC_ROLE_PERMISSIONS = {
+    'Administrator': {
+        'manage_users': True,
+        'upload_logs': True,
+        'manage_investigations': True,
+        'triage_findings': True,
+        'export_reports': True,
+        'view_audit': True,
+    },
+    'Admin': {
+        'manage_users': True,
+        'upload_logs': True,
+        'manage_investigations': True,
+        'triage_findings': True,
+        'export_reports': True,
+        'view_audit': True,
+    },
+    'Analyst': {
+        'manage_users': False,
+        'upload_logs': True,
+        'manage_investigations': True,
+        'triage_findings': True,
+        'export_reports': True,
+        'view_audit': True,
+    },
+    'Viewer': {
+        'manage_users': False,
+        'upload_logs': False,
+        'manage_investigations': False,
+        'triage_findings': False,
+        'export_reports': True,
+        'view_audit': True,
+    }
+}
+
 @app.route('/api/auth/me', methods=['GET'])
 @login_required
 def api_me():
+    role = session.get('role', 'Viewer')
     return jsonify({
         'ok': True,
         'data': {
             'user': {
                 'id': session.get('user_id'),
                 'username': session.get('username'),
-                'role': session.get('role')
+                'role': role,
+                'permissions': SOC_ROLE_PERMISSIONS.get(role, SOC_ROLE_PERMISSIONS['Viewer'])
             }
         }
     })
 
+
+import base64
+import hmac
+import hashlib
+import struct
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+def generate_totp_secret(length=16):
+    raw = os.urandom(10)
+    return base64.b32encode(raw).decode('utf-8').rstrip('=')
+
+def get_totp_token(secret, interval=30, offset=0):
+    key = base64.b32decode(secret.upper() + '=' * ((8 - len(secret) % 8) % 8))
+    counter = int(time.time() // interval) + offset
+    msg = struct.pack('>Q', counter)
+    digest = hmac.new(key, msg, hashlib.sha1).digest()
+    o = digest[-1] & 0x0F
+    token = (struct.unpack('>I', digest[o:o+4])[0] & 0x7FFFFFFF) % 1000000
+    return f"{token:06d}"
+
+def verify_totp(secret, code):
+    if not secret or not code:
+        return False
+    code = str(code).strip()
+    return hmac.compare_digest(get_totp_token(secret, offset=0), code)
+
+def send_otp_email(to_email, username, otp_code):
+    sender_email = os.environ.get('SMTP_EMAIL', 'hamdankaleem2007@gmail.com')
+    app_password = os.environ.get('SMTP_APP_PASSWORD', '')
+    if not app_password:
+        return False, 'SMTP_APP_PASSWORD is not configured in environment.'
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = f'ShadowTrace SOC — Verification Code: {otp_code}'
+    msg['From'] = f'ShadowTrace SOC Security <{sender_email}>'
+    msg['To'] = to_email
+
+    html_body = f"""
+    <div style="font-family:Inter,Arial,sans-serif;background:#0a0f1e;color:#e2e8f0;padding:24px;border-radius:12px;border:1px solid #1e293b;">
+      <h2 style="color:#22d3ee;margin-top:0;">ShadowTrace Security Operations Center</h2>
+      <p>Hello <strong>{username}</strong>,</p>
+      <p>Your one-time verification code is:</p>
+      <div style="font-size:28px;font-weight:700;letter-spacing:6px;color:#22d3ee;background:#0f172a;padding:12px 20px;border-radius:8px;display:inline-block;border:1px solid #334155;">
+        {otp_code}
+      </div>
+      <p style="font-size:12px;color:#94a3b8;margin-top:16px;">This code expires in 10 minutes. If you did not request this, please contact your SOC Administrator immediately.</p>
+      <hr style="border:none;border-top:1px solid #1e293b;margin:20px 0;" />
+      <p style="font-size:12px;color:#64748b;margin:0;">
+        <strong>ShadowTrace SOC Security Team</strong><br/>
+        The Three Bugs Cybersecurity Operations<br/>
+        Automated Security Notification · {sender_email}
+      </p>
+    </div>
+    """
+    msg.attach(MIMEText(html_body, 'html'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+            server.starttls()
+            server.login(sender_email, app_password)
+            server.sendmail(sender_email, [to_email], msg.as_string())
+        return True, 'OTP sent'
+    except Exception as e:
+        return False, str(e)
+
+
+@app.route('/api/auth/mfa/setup', methods=['POST'])
+@login_required
+def api_mfa_setup():
+    user_id = session.get('user_id')
+    username = session.get('username')
+    secret = generate_totp_secret()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET totp_secret = ? WHERE id = ?', (secret, user_id))
+    conn.commit()
+    conn.close()
+    otpauth_uri = f"otpauth://totp/ShadowTrace:{username}?secret={secret}&issuer=ShadowTrace"
+    return jsonify({'ok': True, 'data': {'secret': secret, 'otpauth_uri': otpauth_uri}})
+
+
+@app.route('/api/auth/mfa/verify', methods=['POST'])
+@login_required
+def api_mfa_verify():
+    data = request.get_json(silent=True) or {}
+    code = (data.get('code') or '').strip()
+    user_id = session.get('user_id')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT totp_secret FROM users WHERE id = ?', (user_id,))
+    row = cursor.fetchone()
+    if not row or not verify_totp(row['totp_secret'], code):
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_MFA', 'message': 'Invalid 6-digit Google Authenticator code.'}}), 400
+    cursor.execute('UPDATE users SET mfa_enabled = 1 WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    log_security_event('MFA_ENABLED', 'Low', f'User {session.get("username")} enabled Google Authenticator MFA', request.remote_addr or 'unknown')
+    return jsonify({'ok': True, 'data': {'mfa_enabled': True}})
+
+
+@app.route('/api/auth/forgot-password/lookup', methods=['POST'])
+def api_forgot_password_lookup():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({'ok': False, 'error': {'code': 'MISSING_USER', 'message': 'Please enter a username to search.'}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, email, totp_secret, mfa_enabled FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': f'Username "{username}" was not found.'}}), 404
+
+    email = user['email'] or ''
+    masked_email = ''
+    if '@' in email:
+        local, dom = email.split('@', 1)
+        masked_email = (local[:2] + '***@' + dom) if len(local) > 2 else ('***@' + dom)
+
+    return jsonify({
+        'ok': True,
+        'data': {
+            'username': user['username'],
+            'has_email': bool(email),
+            'masked_email': masked_email,
+            'has_totp': bool(user['totp_secret'])
+        }
+    })
+
+
+@app.route('/api/auth/forgot-password/verify-code', methods=['POST'])
+def api_forgot_password_verify_code():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    code = (data.get('code') or '').strip()
+    method = (data.get('method') or 'email').strip()
+
+    if not username or not code:
+        return jsonify({'ok': False, 'error': {'code': 'MISSING_FIELDS', 'message': 'Username and 6-digit code are required.'}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, totp_secret FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    verified = False
+    if method == 'totp' and user['totp_secret'] and verify_totp(user['totp_secret'], code):
+        verified = True
+    elif method == 'email':
+        cursor.execute('SELECT id, expires_at FROM otp_codes WHERE user_id = ? AND code = ? AND used = 0 ORDER BY id DESC LIMIT 1', (user['id'], code))
+        otp_row = cursor.fetchone()
+        if otp_row and datetime.fromisoformat(otp_row['expires_at']) > datetime.utcnow():
+            verified = True
+
+    conn.close()
+    if not verified:
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_CODE', 'message': 'Wrong or expired 6-digit verification code.'}}), 400
+
+    return jsonify({'ok': True, 'data': {'verified': True, 'message': 'Code verified! You can now set a new password.'}})
+
+
+@app.route('/api/auth/forgot-password/request', methods=['POST'])
+def api_forgot_password_request():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({'ok': False, 'error': {'code': 'MISSING_USER', 'message': 'Username is required.'}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, email, mfa_enabled FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    if user['mfa_enabled']:
+        conn.close()
+        return jsonify({'ok': True, 'data': {'method': 'totp', 'message': 'Enter the 6-digit code from your Google Authenticator app.'}})
+
+    if not user['email']:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NO_RECOVERY', 'message': 'Neither Google Authenticator nor an email address is configured for this account. Contact your SOC Admin.'}}), 400
+
+    otp_code = f"{int.from_bytes(os.urandom(3), 'big') % 1000000:06d}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    cursor.execute('INSERT INTO otp_codes (user_id, code, expires_at) VALUES (?, ?, ?)', (user['id'], otp_code, expires_at.isoformat()))
+    conn.commit()
+    conn.close()
+
+    ok, err_msg = send_otp_email(user['email'], user['username'], otp_code)
+    if not ok:
+        return jsonify({'ok': False, 'error': {'code': 'EMAIL_FAILED', 'message': f'Could not send OTP email: {err_msg}'}}), 500
+
+    return jsonify({'ok': True, 'data': {'method': 'email', 'message': f'A 6-digit OTP has been sent to {user["email"]}.'}})
+
+
+@app.route('/api/auth/forgot-password/reset', methods=['POST'])
+def api_forgot_password_reset():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    code = (data.get('code') or '').strip()
+    new_password = data.get('new_password') or ''
+
+    valid, msg = validate_password_policy(new_password)
+    if not valid:
+        return jsonify({'ok': False, 'error': {'code': 'WEAK_PASSWORD', 'message': msg}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, password_hash, totp_secret, mfa_enabled FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    verified = False
+    if user['mfa_enabled'] and verify_totp(user['totp_secret'], code):
+        verified = True
+    else:
+        cursor.execute('SELECT id, expires_at FROM otp_codes WHERE user_id = ? AND code = ? AND used = 0 ORDER BY id DESC LIMIT 1', (user['id'], code))
+        otp_row = cursor.fetchone()
+        if otp_row and datetime.fromisoformat(otp_row['expires_at']) > datetime.utcnow():
+            verified = True
+            cursor.execute('UPDATE otp_codes SET used = 1 WHERE id = ?', (otp_row['id'],))
+
+    if not verified:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_CODE', 'message': 'Invalid or expired verification code.'}}), 400
+
+    # Check last 5 passwords (current + last 4 in history)
+    if check_password_hash(user['password_hash'], new_password):
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'PASSWORD_REUSED', 'message': 'This password was already used and is in your last 5 passwords. Please choose a different password.'}}), 400
+
+    cursor.execute('SELECT password_hash FROM password_history WHERE user_id = ? ORDER BY id DESC LIMIT 4', (user['id'],))
+    for hist in cursor.fetchall():
+        if check_password_hash(hist['password_hash'], new_password):
+            conn.close()
+            return jsonify({'ok': False, 'error': {'code': 'PASSWORD_REUSED', 'message': 'This password was already used and is in your last 5 passwords. Please choose a different password.'}}), 400
+
+    # Record old password in history
+    cursor.execute('INSERT INTO password_history (user_id, password_hash) VALUES (?, ?)', (user['id'], user['password_hash']))
+    cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (generate_password_hash(new_password), user['id']))
+    conn.commit()
+    conn.close()
+    log_security_event('PASSWORD_RESET_MFA', 'Medium', f'Password reset via MFA/OTP for {username}', request.remote_addr or 'unknown')
+    return jsonify({'ok': True, 'data': {'message': 'Password reset successfully. You can now log in.'}})
+
+
+@app.route('/api/users', methods=['GET'])
+@role_required(['Admin', 'Administrator'])
+def api_list_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, role, email, mfa_enabled, created_at FROM users ORDER BY id ASC')
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify({'ok': True, 'data': users})
+
+
+@app.route('/api/users', methods=['POST'])
+@role_required(['Admin', 'Administrator'])
+def api_create_user():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    role = (data.get('role') or 'Analyst').strip()
+    email = (data.get('email') or '').strip()
+
+    if not username or len(username) < 3:
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_USERNAME', 'message': 'Username must be at least 3 characters.'}}), 400
+    if role not in SOC_ROLE_PERMISSIONS:
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_ROLE', 'message': 'Role must be Admin, Analyst, or Viewer.'}}), 400
+
+    valid, msg = validate_password_policy(password)
+    if not valid:
+        return jsonify({'ok': False, 'error': {'code': 'WEAK_PASSWORD', 'message': msg}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'DUPLICATE_USER', 'message': f'Username "{username}" already exists.'}}), 409
+
+    pw_hash = generate_password_hash(password)
+    cursor.execute('INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)', (username, pw_hash, role, email))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('USER_CREATED', 'Medium', f'Admin {session.get("username")} created user {username} with role {role}', client_ip)
+    return jsonify({'ok': True, 'data': {'id': new_id, 'username': username, 'role': role}}), 201
+
+
+@app.route('/api/users/<int:user_id>', methods=['PATCH'])
+@role_required(['Admin', 'Administrator'])
+def api_update_user_role(user_id):
+    data = request.get_json(silent=True) or {}
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, role, email FROM users WHERE id = ?', (user_id,))
+    target = cursor.fetchone()
+    if not target:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    new_username = (data.get('username') if 'username' in data else target['username']).strip()
+    new_email = (data.get('email') if 'email' in data else (target['email'] or '')).strip()
+    new_role = (data.get('role') if 'role' in data else target['role']).strip()
+
+    if not new_username or len(new_username) < 3:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_USERNAME', 'message': 'Username must be at least 3 characters.'}}), 400
+    if new_role not in SOC_ROLE_PERMISSIONS:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'INVALID_ROLE', 'message': 'Role must be Admin, Analyst, or Viewer.'}}), 400
+    if user_id == session.get('user_id') and new_role not in ('Admin', 'Administrator'):
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'SELF_DEMOTE_BLOCKED', 'message': 'You cannot demote your own active Admin account.'}}), 400
+
+    cursor.execute('SELECT id FROM users WHERE username = ? AND id != ?', (new_username, user_id))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'DUPLICATE_USER', 'message': f'Username "{new_username}" is already taken.'}}), 409
+
+    cursor.execute('UPDATE users SET username = ?, email = ?, role = ? WHERE id = ?', (new_username, new_email, new_role, user_id))
+    conn.commit()
+    conn.close()
+
+    if user_id == session.get('user_id'):
+        session['username'] = new_username
+
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('USER_UPDATED', 'Medium', f'Admin {session.get("username")} updated user {new_username} (Role: {new_role}, Email: {new_email})', client_ip)
+    return jsonify({'ok': True, 'data': {'id': user_id, 'username': new_username, 'email': new_email, 'role': new_role}})
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@role_required(['Admin', 'Administrator'])
+def api_delete_user(user_id):
+    if user_id == session.get('user_id'):
+        return jsonify({'ok': False, 'error': {'code': 'SELF_DELETE_BLOCKED', 'message': 'You cannot delete your own active account.'}}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, role FROM users WHERE id = ?', (user_id,))
+    target = cursor.fetchone()
+    if not target:
+        conn.close()
+        return jsonify({'ok': False, 'error': {'code': 'NOT_FOUND', 'message': 'User not found.'}}), 404
+
+    cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+    client_ip = request.remote_addr or 'unknown'
+    log_security_event('USER_DELETED', 'High', f'Admin {session.get("username")} deleted user {target["username"]} ({target["role"]})', client_ip)
+    return jsonify({'ok': True, 'data': {'deleted_id': user_id}})
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
+    run_id_param = request.args.get('run_id')
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get latest run
-    cursor.execute('SELECT * FROM analysis_runs ORDER BY id DESC LIMIT 1')
+    # Get specified or latest run
+    if run_id_param:
+        cursor.execute('SELECT * FROM analysis_runs WHERE id = ?', (run_id_param,))
+    else:
+        cursor.execute('SELECT * FROM analysis_runs ORDER BY id DESC LIMIT 1')
     run = cursor.fetchone()
     
     if not run:
@@ -491,11 +1082,15 @@ def get_logs():
     severity = request.args.get('severity', '').strip()
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
+    run_id_param = request.args.get('run_id')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id FROM analysis_runs ORDER BY id DESC LIMIT 1')
+    if run_id_param:
+        cursor.execute('SELECT id FROM analysis_runs WHERE id = ?', (run_id_param,))
+    else:
+        cursor.execute('SELECT id FROM analysis_runs ORDER BY id DESC LIMIT 1')
     run = cursor.fetchone()
     if not run:
         conn.close()
@@ -539,11 +1134,15 @@ def get_logs():
 def get_detections():
     search = request.args.get('search', '').strip()
     severity = request.args.get('severity', '').strip()
+    run_id_param = request.args.get('run_id')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id FROM analysis_runs ORDER BY id DESC LIMIT 1')
+    if run_id_param:
+        cursor.execute('SELECT id FROM analysis_runs WHERE id = ?', (run_id_param,))
+    else:
+        cursor.execute('SELECT id FROM analysis_runs ORDER BY id DESC LIMIT 1')
     run = cursor.fetchone()
     if not run:
         conn.close()
@@ -683,9 +1282,17 @@ def get_investigation_findings(investigation_id):
     findings = []
     for r in rows:
         f = dict(r)
-        # Get supporting event IDs
-        cursor.execute('SELECT event_id FROM finding_events WHERE finding_id = ?', (f['id'],))
-        f['supporting_event_ids'] = [e['event_id'] for e in cursor.fetchall()]
+        # Get supporting event IDs and source IP
+        cursor.execute('''
+            SELECT fe.event_id, le.source_ip 
+            FROM finding_events fe 
+            LEFT JOIN log_events le ON fe.event_id = le.id 
+            WHERE fe.finding_id = ?
+        ''', (f['id'],))
+        ev_rows = cursor.fetchall()
+        f['supporting_event_ids'] = [e['event_id'] for e in ev_rows]
+        source_ips = [e['source_ip'] for e in ev_rows if e['source_ip']]
+        f['source_ip'] = source_ips[0] if source_ips else '—'
         findings.append(f)
         
     conn.close()
@@ -841,12 +1448,9 @@ def upload_file():
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO analysis_runs (filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, stored_filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (os.path.basename(file.filename), total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, stored_name))
-            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (investigation_id, file.filename, total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed'))
+            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, stored_filename, rules_evaluated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (investigation_id, os.path.basename(file.filename), total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, stored_name, 3))
         run_id = cursor.lastrowid
         
         # Record in evidence integrity table
@@ -955,12 +1559,9 @@ def load_sample():
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO analysis_runs (filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, stored_filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', ('sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, 'data/sample_logs.csv'))
-            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, rules_evaluated, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (investigation_id, 'sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 3, 'Completed'))
+            INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, stored_filename, rules_evaluated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (investigation_id, 'sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, 'data/sample_logs.csv', 3))
         run_id = cursor.lastrowid
         
         cursor.execute('''
@@ -1428,6 +2029,40 @@ def download_template():
 # MEMBER 4 — Investigation Reports & Export + Audit Trail
 # ─────────────────────────────────────────────────────────
 
+@app.route('/api/runs', methods=['GET'])
+def get_all_runs():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, investigation_id, filename, timestamp, status, total_records, suspicious_count FROM analysis_runs ORDER BY id DESC')
+    rows = cursor.fetchall()
+    runs = [dict(r) for r in rows]
+    conn.close()
+    return jsonify({'ok': True, 'data': runs})
+
+@app.route('/api/runs/<int:run_id>/activate', methods=['POST'])
+def activate_run(run_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, timestamp FROM analysis_runs WHERE id = ?', (run_id,))
+    run = cursor.fetchone()
+    if not run:
+        conn.close()
+        return jsonify({'ok': False, 'error': f'Analysis Run #{run_id} not found.'}), 404
+    
+    run_dict = dict(run)
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'message': f'Analysis Run #{run_id} loaded successfully.',
+        'run': run_dict,
+        'stats': {
+            'total': run_dict.get('total_records', 0),
+            'valid': run_dict.get('valid_records', 0),
+            'invalid': run_dict.get('invalid_records', 0),
+            'suspicious': run_dict.get('suspicious_count', 0)
+        }
+    })
+
 # TASK 3 — Report Preview
 @app.route('/api/investigations/<int:run_id>/report', methods=['GET'])
 def report_preview(run_id):
@@ -1436,8 +2071,13 @@ def report_preview(run_id):
     cursor.execute('SELECT * FROM analysis_runs WHERE id = ?', (run_id,))
     run = cursor.fetchone()
     if not run:
+        # Check if there are any runs at all
+        cursor.execute('SELECT COUNT(*) FROM analysis_runs')
+        total_runs = cursor.fetchone()[0]
         conn.close()
-        return jsonify({'ok': False, 'error': 'Investigation not found'}), 404
+        if total_runs == 0:
+            return jsonify({'ok': False, 'error': 'No analysis runs exist yet. Please upload a CSV log file or click "Load Sample Dataset" first.'}), 404
+        return jsonify({'ok': False, 'error': f'Analysis Run #{run_id} not found. Please select a valid Run ID.'}), 404
 
     cursor.execute('SELECT COUNT(*) FROM log_events WHERE run_id = ?', (run_id,))
     event_count = cursor.fetchone()[0]
@@ -1480,8 +2120,12 @@ def generate_report(run_id):
     cursor.execute('SELECT * FROM analysis_runs WHERE id = ?', (run_id,))
     run = cursor.fetchone()
     if not run:
+        cursor.execute('SELECT COUNT(*) FROM analysis_runs')
+        total_runs = cursor.fetchone()[0]
         conn.close()
-        return jsonify({'ok': False, 'error': 'Investigation not found'}), 404
+        if total_runs == 0:
+            return jsonify({'ok': False, 'error': 'No analysis runs exist yet. Please upload a CSV log file or click "Load Sample Dataset" first.'}), 404
+        return jsonify({'ok': False, 'error': f'Analysis Run #{run_id} not found.'}), 404
 
     cursor.execute('SELECT * FROM detections WHERE run_id = ?', (run_id,))
     detections = cursor.fetchall()
@@ -1788,8 +2432,12 @@ def verify_evidence_integrity(run_id):
         cursor.execute('SELECT * FROM analysis_runs WHERE id = ?', (run_id,))
         run = cursor.fetchone()
         if not run:
+            cursor.execute('SELECT COUNT(*) FROM analysis_runs')
+            total_runs = cursor.fetchone()[0]
             conn.close()
-            return jsonify({'ok': False, 'error': 'Investigation not found'}), 404
+            if total_runs == 0:
+                return jsonify({'ok': False, 'error': 'No analysis runs exist yet. Please upload a CSV log file or load sample data first.'}), 404
+            return jsonify({'ok': False, 'error': f'Analysis Run #{run_id} not found.'}), 404
         recorded_hash = run['sha256_hash'] if 'sha256_hash' in run.keys() else None
         stored_file = run['stored_filename'] if 'stored_filename' in run.keys() else None
         file_path = os.path.join(cfg.UPLOAD_FOLDER, stored_file) if stored_file else None

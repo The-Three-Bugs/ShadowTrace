@@ -1,0 +1,1013 @@
+/* ============================================================
+   SHADOWTRACE — CYBER NEUMORPHIC UI PATCH
+   Fixes all unstyled/broken sections without changing colors,
+   animations, or transitions already defined in style.css
+   ============================================================ */
+
+/* ============ MISSING DESIGN TOKENS (Reports/Audit used these) ============ */
+:root {
+  --text-primary: var(--txt-0);
+  --text-secondary: var(--txt-1);
+  --text-muted: var(--txt-2);
+  --bg-card: rgba(18, 24, 42, 0.72);
+  --bg-card-2: rgba(10, 15, 30, 0.7);
+  --accent-cyan: var(--cyan);
+  --accent-red: var(--rose);
+}
+
+/* ============ BTN SECONDARY (missing class) ============ */
+.btn.secondary {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.35);
+  color: #c4b5fd;
+}
+.btn.secondary:hover {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -8px rgba(139, 92, 246, 0.5);
+}
+
+/* ============ CARD HEADER (old class → new cyber neumorphic) ============ */
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.card-header i {
+  width: 20px;
+  height: 20px;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.6));
+  flex-shrink: 0;
+}
+.card-header h2,
+.card-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: linear-gradient(90deg, #fff, #c3cbe4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin: 0;
+}
+
+/* ============ REPORTS SECTION — INPUT FIELDS ============ */
+#reportRunId {
+  width: 90px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #080d19;
+  color: var(--txt-0);
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.6),
+    inset -2px -2px 5px rgba(255, 255, 255, 0.02);
+  outline: none;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+#reportRunId:focus {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.6),
+    0 0 12px rgba(34, 211, 238, 0.2);
+}
+
+/* ============ REPORTS — PREVIEW PANEL ============ */
+#reportPreviewPanel {
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 14px !important;
+  padding: 20px !important;
+  margin-bottom: 20px;
+  background: linear-gradient(160deg, rgba(14, 20, 38, 0.9), rgba(8, 12, 22, 0.85)) !important;
+  box-shadow:
+    8px 8px 20px rgba(0, 0, 0, 0.5),
+    -4px -4px 12px rgba(255, 255, 255, 0.02),
+    inset 0 1px 0 rgba(34, 211, 238, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+#reportPreviewPanel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.4), rgba(139, 92, 246, 0.35), transparent);
+}
+#reportPreviewPanel h3 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan) !important;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.5));
+  margin-bottom: 14px !important;
+}
+#reportPreviewTable tr td:first-child {
+  padding: 7px 12px;
+  color: var(--txt-2) !important;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  width: 200px;
+}
+#reportPreviewTable tr td:last-child {
+  padding: 7px 12px;
+  color: var(--txt-0) !important;
+  font-weight: 600;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+}
+#reportPreviewTable tr {
+  border-bottom: 1px solid rgba(120, 145, 200, 0.07);
+  transition: background 0.2s;
+}
+#reportPreviewTable tr:hover {
+  background: rgba(34, 211, 238, 0.04);
+}
+
+/* ============ AUDIT — UNSTYLED TABLE ============ */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(8, 12, 22, 0.4);
+}
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.log-table thead th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--txt-3);
+  padding: 12px 14px;
+  background: #0a0f1e !important;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  white-space: nowrap;
+}
+.log-table tbody td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(120, 145, 200, 0.06);
+  color: var(--txt-1);
+  vertical-align: middle;
+}
+.log-table tbody tr {
+  transition: background 0.2s;
+}
+.log-table tbody tr:hover {
+  background: rgba(34, 211, 238, 0.04);
+}
+.log-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ============ AUDIT — FILTER INPUTS ============ */
+#auditActionFilter,
+#auditDateFrom,
+#auditDateTo {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #080d19;
+  color: var(--txt-0);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.55),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.02);
+  transition: border-color 0.25s, box-shadow 0.25s;
+  appearance: none;
+}
+#auditActionFilter {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f8aab' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+}
+#auditActionFilter:focus,
+#auditDateFrom:focus,
+#auditDateTo:focus {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.55),
+    0 0 12px rgba(34, 211, 238, 0.18);
+}
+#auditActionFilter option { background: #0f1524; color: #f1f5ff; }
+
+/* ============ REPORTS — STYLED BUTTONS ============ */
+.view-reports .btn,
+#view-reports .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid;
+  transition: all 0.3s var(--transition);
+  cursor: pointer;
+}
+#view-reports .btn[onclick*="previewReport"] {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.35);
+  color: #67e8f9;
+}
+#view-reports .btn[onclick*="previewReport"]:hover {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: rgba(34, 211, 238, 0.65);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(34, 211, 238, 0.5);
+}
+#view-reports .btn[onclick*="verifyIntegrity"] {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+#view-reports .btn[onclick*="verifyIntegrity"]:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.65);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(16, 185, 129, 0.5);
+}
+#view-reports .btn[onclick*="generatePDF"] {
+  background: rgba(244, 63, 94, 0.1);
+  border-color: rgba(244, 63, 94, 0.35);
+  color: #fb7185;
+}
+#view-reports .btn[onclick*="generatePDF"]:hover {
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.65);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(244, 63, 94, 0.5);
+}
+#view-reports .btn[onclick*="exportCSV('events')"],
+#view-reports .btn[onclick*="exportCSV('findings')"],
+#view-reports .btn[onclick*="exportCSV('evidence')"] {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+}
+#view-reports .btn[onclick*="exportCSV"]:hover {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(139, 92, 246, 0.5);
+}
+
+/* ============ INVESTIGATION DETAIL PANEL — INLINE STYLE FIX ============ */
+#invDetailsCard .modal-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--txt-3);
+  margin-bottom: 6px;
+  display: block;
+  font-weight: 600;
+}
+
+/* Detail info blocks */
+#invDetailsCard > div > div {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Description / timestamps panels */
+.inv-detail-panel {
+  background: rgba(10, 15, 30, 0.6);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow:
+    inset 3px 3px 8px rgba(0, 0, 0, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.02);
+}
+.inv-detail-panel .panel-label {
+  font-size: 10.5px;
+  color: var(--txt-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.inv-detail-panel .panel-value {
+  font-size: 14px;
+  color: var(--txt-0);
+  font-weight: 500;
+}
+
+/* Evidence section header */
+#invDetailsCard h4 {
+  font-size: 15px;
+  color: var(--txt-0);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+#invDetailsCard p {
+  font-size: 12.5px;
+  color: var(--txt-2);
+  margin-top: 4px;
+}
+
+/* ============ CREATE INVESTIGATION MODAL — NEUMORPHIC ============ */
+#createInvModal > div {
+  background: linear-gradient(160deg, rgba(14, 20, 38, 0.98), rgba(8, 12, 22, 0.98)) !important;
+  border: 1px solid rgba(34, 211, 238, 0.3) !important;
+  border-radius: 18px !important;
+  padding: 28px !important;
+  box-shadow:
+    0 0 40px rgba(34, 211, 238, 0.15),
+    14px 14px 32px rgba(0, 0, 0, 0.8),
+    -6px -6px 20px rgba(255, 255, 255, 0.02),
+    inset 0 1px 0 rgba(34, 211, 238, 0.1) !important;
+  position: relative;
+  overflow: hidden;
+}
+#createInvModal > div::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #22d3ee, #8b5cf6, #34d399);
+}
+#createInvModal h3 {
+  color: var(--txt-0) !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  margin-bottom: 20px !important;
+  background: linear-gradient(90deg, #fff, #c3cbe4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+#createInvModal label {
+  display: block !important;
+  font-size: 10.5px !important;
+  color: var(--txt-2) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  font-weight: 600 !important;
+  margin-bottom: 7px !important;
+}
+#createInvModal input[type="text"],
+#createInvModal textarea,
+#createInvModal select {
+  width: 100%;
+  background: #080d19 !important;
+  border: 1px solid rgba(120, 145, 200, 0.14) !important;
+  color: var(--txt-0) !important;
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  outline: none;
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.65),
+    inset -2px -2px 5px rgba(255, 255, 255, 0.025);
+  transition: border-color 0.25s, box-shadow 0.25s;
+  resize: vertical;
+}
+#createInvModal input[type="text"]:focus,
+#createInvModal textarea:focus,
+#createInvModal select:focus {
+  border-color: rgba(34, 211, 238, 0.55) !important;
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.65),
+    0 0 14px rgba(34, 211, 238, 0.2) !important;
+}
+#createInvModal input::placeholder,
+#createInvModal textarea::placeholder { color: var(--txt-3); }
+#createInvModal select option { background: #0f1524; color: #f1f5ff; }
+
+/* ============ MODAL — NOTE INPUT ============ */
+#modalNoteInput {
+  flex: 1;
+  background: #080d19;
+  border: 1px solid rgba(120, 145, 200, 0.14);
+  color: var(--txt-0);
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+#modalNoteInput:focus {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 211, 238, 0.18);
+}
+#modalNoteInput::placeholder { color: var(--txt-3); }
+
+/* ============ MODAL SELECT (small) ============ */
+.select.sm {
+  padding: 6px 28px 6px 10px;
+  font-size: 11.5px;
+  border-radius: 8px;
+}
+
+/* ============ SETTINGS — CARD TITLE CLASS ============ */
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--txt-0);
+  margin: 0;
+}
+
+/* ============ SETTINGS — REPLAY / LOGOUT BUTTONS ============ */
+#replayIntroBtn {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(139, 92, 246, 0.15));
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: #67e8f9;
+  box-shadow:
+    6px 6px 14px rgba(0, 0, 0, 0.5),
+    -3px -3px 10px rgba(255, 255, 255, 0.025),
+    0 0 16px rgba(34, 211, 238, 0.15);
+}
+#replayIntroBtn:hover {
+  border-color: rgba(34, 211, 238, 0.7);
+  color: #fff;
+  box-shadow:
+    8px 8px 20px rgba(0, 0, 0, 0.6),
+    0 0 24px rgba(34, 211, 238, 0.35);
+  transform: translateY(-2px);
+}
+#settingsLogoutBtn {
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: #fb7185;
+  box-shadow:
+    6px 6px 14px rgba(0, 0, 0, 0.5),
+    -3px -3px 10px rgba(255, 255, 255, 0.025);
+}
+#settingsLogoutBtn:hover {
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.65);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -6px rgba(244, 63, 94, 0.5);
+}
+
+/* ============ INVESTIGATION INLINE-STYLED PANELS — NEUMORPHIC ============ */
+/* Description / meta boxes in detail card */
+#invDetailsCard [style*="background: rgba(255,255,255,0.02)"] {
+  background: rgba(10, 15, 30, 0.6) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow:
+    inset 3px 3px 8px rgba(0, 0, 0, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.02) !important;
+  padding: 16px !important;
+}
+
+/* Evidence section separator */
+#invDetailsCard [style*="border-top: 1px solid rgba(255,255,255,0.08)"] {
+  border-top: 1px solid var(--border) !important;
+}
+
+/* Section labels (DESCRIPTION, TIMESTAMPS) */
+#invDetailsCard [style*="font-size: 12px; color: #8a99ad"] {
+  font-size: 10.5px !important;
+  color: var(--txt-3) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+#invDetailsCard [style*="font-size: 14px; color: #f1f5ff"] {
+  font-size: 14px !important;
+  color: var(--txt-0) !important;
+  font-weight: 500;
+}
+#invDetailsCard [style*="font-size: 13px; color: #c3cbe4"] {
+  font-size: 13px !important;
+  color: var(--txt-1) !important;
+}
+
+/* Evidence & SHA-256 section heading */
+#invDetailsCard h4[style] {
+  font-size: 15px !important;
+  color: var(--txt-0) !important;
+  font-weight: 700 !important;
+}
+#invDetailsCard p[style*="color: #8a99ad"] {
+  color: var(--txt-2) !important;
+  font-size: 12.5px !important;
+}
+
+/* ============ REPORTS — RUN ID ROW ============ */
+#view-reports [style*="display:flex;gap:12px;align-items:center"] > label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--txt-2);
+}
+
+/* ============ REPORTS / AUDIT DESC TEXT ============ */
+#view-reports > .card > p,
+#view-audit > .card > p {
+  font-size: 13px;
+  color: var(--txt-2) !important;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+/* ============ AUDIT — CSV SECTION HEADER ============ */
+.card-header h3[style*="font-size:14px"] {
+  font-size: 13.5px !important;
+  font-weight: 700;
+  color: var(--txt-0) !important;
+  -webkit-text-fill-color: unset;
+  background: none;
+}
+
+/* ============ AUDIT TRAIL EMPTY STATE ============ */
+#auditTableBody tr td[style*="text-align:center"] {
+  text-align: center;
+  color: var(--txt-3) !important;
+  padding: 40px 20px !important;
+  font-style: italic;
+}
+
+/* ============ MODAL TEXT-BOX NEUMORPHIC ============ */
+.modal-text-box {
+  background: #080d19 !important;
+  border: 1px solid rgba(120, 145, 200, 0.1) !important;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--txt-1);
+  line-height: 1.55;
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.6),
+    inset -2px -2px 5px rgba(255, 255, 255, 0.02);
+}
+
+/* ============ FONT MONO HELPER ============ */
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+/* ============ GENERAL UNSTYLED SELECT FALLBACK ============ */
+select:not(.select):not([id*="inv"]):not([id*="audit"]):not([id*="report"]):not([id*="log"]):not([id*="threat"]):not([id*="modal"]) {
+  padding: 8px 32px 8px 12px;
+  border-radius: 10px;
+  background: rgba(10, 15, 30, 0.6);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--txt-0);
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f8aab' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+/* ============ SCROLLBAR FOR MODALS ============ */
+.modal-box::-webkit-scrollbar { width: 6px; }
+.modal-box::-webkit-scrollbar-thumb { background: rgba(120,145,200,0.2); border-radius: 6px; }
+
+/* ============ NOTES LIST ITEMS ============ */
+.note-item {
+  background: rgba(34, 211, 238, 0.04) !important;
+  border-left: 2px solid rgba(34, 211, 238, 0.5) !important;
+  padding: 9px 14px !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  color: var(--txt-1) !important;
+  box-shadow:
+    3px 3px 8px rgba(0, 0, 0, 0.3),
+    -1px -1px 4px rgba(255, 255, 255, 0.015);
+}
+.note-date {
+  font-size: 10px !important;
+  color: var(--txt-3) !important;
+  margin-bottom: 3px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ============ FILTER ROW IN AUDIT TRAIL ============ */
+#view-audit [style*="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px"] {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+/* ============ RESET BUTTON IN AUDIT ============ */
+#view-audit .btn:not(.primary) {
+  background: rgba(120, 145, 200, 0.07);
+  border-color: var(--border);
+  color: var(--txt-1);
+}
+#view-audit .btn:not(.primary):hover {
+  background: rgba(120, 145, 200, 0.14);
+  border-color: var(--border-strong);
+  color: var(--txt-0);
+  transform: translateY(-1px);
+}
+
+/* ============ INPUT FOCUS GLOW — GLOBAL ============ */
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+textarea:focus {
+  outline: none;
+}
+
+/* ============ MISSING .input CLASS FOR INLINE USAGE ============ */
+.input {
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #080d19;
+  color: var(--txt-0);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.input:focus {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 211, 238, 0.18);
+}
+.input::placeholder { color: var(--txt-3); }
+
+/* ============ NEU-INSET-ROW PADDING FIX ============ */
+.neu-inset-row .modal-label {
+  color: var(--txt-3) !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 !important;
+}
+
+/* ============ INVESTIGATION GRID FIX — 1fr/1fr ============ */
+#invDetailsCard .inv-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* ============================================================
+   RESPONSIVE SCREEN-FRIENDLY & TABLE GRID ENHANCEMENTS
+   Ensures UI stretches to every screen, tables never cut off at bottom,
+   and sticky headers remain 100% solid & opaque on scroll.
+   ============================================================ */
+
+/* App Shell Screen Fit */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(220px, 240px) 1fr;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  overflow: hidden;
+  width: 100vw;
+  max-width: 100%;
+}
+
+/* Sidebar Breathability */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(14px, 2vh, 20px) 12px;
+  background: #090e1c;
+  border-right: 1px solid var(--border);
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 20;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.25) transparent;
+}
+.sidebar .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px clamp(12px, 2vh, 20px);
+}
+.sidebar .nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+.sidebar .nav-label {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--txt-3);
+  padding: 6px 10px 4px;
+}
+.sidebar .nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  color: var(--txt-2);
+  font-weight: 500;
+  font-size: 13px;
+  transition: all 0.25s var(--transition);
+  overflow: hidden;
+}
+.sidebar-footer {
+  padding-top: 12px;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Main Area Screen Scaling */
+.main {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: clamp(14px, 2vh, 24px) clamp(16px, 2.5vw, 32px) 95px !important;
+  scroll-behavior: smooth;
+  height: 100vh;
+  height: 100dvh;
+  display: block !important;
+}
+
+/* Views & Cards Fluid Stretch */
+.view {
+  width: 100%;
+}
+.view.active {
+  display: block !important;
+}
+#view-threats .card,
+#view-analyzer .card,
+#view-audit .card,
+#view-reports .card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fluid KPI Grid on Dashboard */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+/* ============================================================
+   TABLE GRID SCROLLBARS & 100% SOLID OPAQUE STICKY HEADERS
+   ============================================================ */
+
+/* Adaptive height container that fits viewport without bottom cut off */
+.table-scroll {
+  width: 100%;
+  flex: 1;
+  min-height: 280px;
+  max-height: clamp(300px, calc(100vh - 270px), 720px);
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  position: relative;
+  border-radius: 12px;
+  background: rgba(8, 12, 24, 0.65);
+  border: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.35) rgba(10, 15, 30, 0.5);
+}
+
+/* Taller tables adapt smoothly */
+#view-analyzer .table-scroll,
+#view-threats .table-scroll,
+#view-audit .table-scroll {
+  max-height: clamp(300px, calc(100vh - 270px), 720px) !important;
+}
+
+/* Shorter tables inside modals */
+.table-scroll.sm {
+  max-height: 200px !important;
+  min-height: auto !important;
+}
+
+/* Cyber scrollbar styling */
+.table-scroll::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar,
+.main::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.table-scroll::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track,
+.main::-webkit-scrollbar-track {
+  background: rgba(10, 15, 30, 0.45);
+  border-radius: 10px;
+}
+.table-scroll::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb,
+.main::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.3);
+  border-radius: 10px;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover,
+.main::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+.table-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 100% Solid Opaque Sticky Headers — Never mixed with scrolled data */
+.table-scroll table,
+.data-table,
+.log-table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100%;
+}
+
+.table-scroll thead,
+.data-table thead,
+.log-table thead,
+.table-scroll thead tr,
+.data-table thead tr,
+.log-table thead tr {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 35 !important;
+  background: #0b1122 !important;
+  background-color: #0b1122 !important;
+}
+
+.table-scroll thead th,
+.data-table thead th,
+.log-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 35 !important;
+  background: #0b1122 !important;
+  background-color: #0b1122 !important;
+  color: #a5b4fc !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  padding: 12px 14px !important;
+  border-bottom: 2px solid rgba(34, 211, 238, 0.45) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75) !important;
+  background-clip: padding-box !important;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  white-space: nowrap !important;
+}
+
+/* Row hover and cells */
+.table-scroll tbody td,
+.data-table tbody td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(120, 145, 200, 0.08);
+  color: var(--txt-1);
+  vertical-align: middle;
+}
+.table-scroll tbody tr:hover,
+.data-table tbody tr:hover {
+  background: rgba(34, 211, 238, 0.05);
+}
+
+/* Column Widths & Fluid Stretching for Threats Table */
+#view-threats .data-table {
+  width: 100% !important;
+  min-width: 840px !important;
+}
+
+#view-threats .data-table th:nth-child(1),
+#view-threats .data-table td:nth-child(1) {
+  width: 55px;
+  min-width: 50px;
+  text-align: center;
+}
+#view-threats .data-table th:nth-child(2),
+#view-threats .data-table td:nth-child(2) {
+  width: 155px;
+  min-width: 140px;
+}
+#view-threats .data-table th:nth-child(3),
+#view-threats .data-table td:nth-child(3) {
+  width: 120px;
+  min-width: 110px;
+}
+#view-threats .data-table th:nth-child(4),
+#view-threats .data-table td:nth-child(4) {
+  width: 95px;
+  min-width: 85px;
+}
+#view-threats .data-table th:nth-child(5),
+#view-threats .data-table td:nth-child(5) {
+  width: 175px;
+  min-width: 150px;
+  word-break: break-word;
+}
+#view-threats .data-table th:nth-child(6),
+#view-threats .data-table td:nth-child(6) {
+  width: 100px;
+  min-width: 90px;
+}
+#view-threats .data-table th:nth-child(7),
+#view-threats .data-table td:nth-child(7),
+#view-threats .threat-evidence-cell {
+  min-width: 200px;
+  max-width: 550px;
+  word-break: break-word;
+  white-space: normal !important;
+}
+#view-threats .data-table th:nth-child(8),
+#view-threats .data-table td:nth-child(8) {
+  width: 90px;
+  min-width: 85px;
+  text-align: center;
+}
+
+/* Column Widths for Log Analyzer & Audit */
+#view-analyzer .data-table {
+  width: 100% !important;
+  min-width: 780px !important;
+}
+#view-audit .data-table {
+  width: 100% !important;
+  min-width: 720px !important;
+}
+
+/* ============================================================
+   RESPONSIVE BREAKPOINTS FOR ALL SCREENS
+   ============================================================ */
+@media (max-width: 1280px) {
+  .app-shell {
+    grid-template-columns: 215px 1fr !important;
+  }
+  .sidebar {
+    padding: 14px 10px !important;
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 72px 1fr !important;
+  }
+  .sidebar {
+    padding: 14px 6px !important;
+  }
+  .sidebar .brand-text,
+  .sidebar .nav-item span:not(.badge-nav):not(.nav-glow),
+  .sidebar .nav-label,
+  .sidebar-footer .status-pill span:last-child,
+  .sidebar-footer .version {
+    display: none !important;
+  }
+  .sidebar .nav-item {
+    justify-content: center !important;
+    padding: 10px 0 !important;
+  }
+  .sidebar .badge-nav {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    margin: 0;
+  }
+  .main {
+    padding: 14px 14px 95px !important;
+  }
+}

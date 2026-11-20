@@ -1,6 +1,7 @@
 /* ===================== SHADOWTRACE FRONTEND ===================== */
 
 const state = {
+  currentRunId: null,
   page: 1,
   perPage: 50,
   logSearch: '',
@@ -80,9 +81,10 @@ function switchView(view) {
   $('crumbCurrent').textContent = meta.crumb;
 
   if (view === 'dashboard') loadStats();
-  if (view === 'analyzer') loadLogs();
+  if (view === 'analyzer') { loadLogs(); loadUploadHistory(); }
   if (view === 'investigations') loadInvestigations();
   if (view === 'threats') loadThreats();
+  if (view === 'reports' && typeof window.populateReportRuns === 'function') window.populateReportRuns();
 }
 
 document.querySelectorAll('.nav-item').forEach((el) => {
@@ -126,27 +128,43 @@ const api = {
     const data = await r.json();
     return { status: r.status, data };
   },
-  async stats() {
-    const r = await fetch('/api/stats');
+  async stats(runId) {
+    const rId = runId || state.currentRunId;
+    const url = rId ? `/api/stats?run_id=${rId}` : '/api/stats';
+    const r = await fetch(url);
     return r.json();
   },
-  async logs() {
+  async logs(runId) {
     const p = new URLSearchParams({
       search: state.logSearch,
       severity: state.logSeverity,
       page: state.page,
       per_page: state.perPage
     });
+    const rId = runId || state.currentRunId;
+    if (rId) p.set('run_id', rId);
     const r = await fetch(`/api/logs?${p}`);
     return r.json();
   },
-  async detections() {
+  async detections(runId) {
     const p = new URLSearchParams({
       search: state.threatSearch,
       severity: state.threatSeverity
     });
+    const rId = runId || state.currentRunId;
+    if (rId) p.set('run_id', rId);
     const r = await fetch(`/api/detections?${p}`);
     return r.json();
+  },
+  async runs() {
+    const r = await fetch('/api/runs');
+    return r.json();
+  },
+  async activateRun(runId) {
+    const r = await fetch(`/api/runs/${runId}/activate`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to activate file.');
+    return data;
   },
   async upload(file) {
     const fd = new FormData();
@@ -686,9 +704,12 @@ async function runUpload(file) {
 
     showRunStats(res.stats);
     toast('success', 'Analysis Complete', `Processed ${res.stats.valid} valid records · ${res.stats.suspicious} suspicious events flagged.`);
+    state.currentRunId = null; // show newly uploaded run
+    await loadUploadHistory();
     await loadStats();
     await loadLogs();
     await loadThreats();
+    if (typeof window.populateReportRuns === 'function') window.populateReportRuns();
     setPipeline(5, 'Done.');
     switchView('analyzer');
   } catch (e) {
@@ -713,9 +734,12 @@ async function runSample() {
     await new Promise((r) => setTimeout(r, 200));
     showRunStats(res.stats);
     toast('success', 'Sample Loaded', `${res.stats.suspicious} suspicious events detected from ${res.stats.valid} records.`);
+    state.currentRunId = null;
+    await loadUploadHistory();
     await loadStats();
     await loadLogs();
     await loadThreats();
+    if (typeof window.populateReportRuns === 'function') window.populateReportRuns();
     setPipeline(5, 'Done.');
     switchView('analyzer');
   } catch (e) {
@@ -736,6 +760,14 @@ function showRunStats(s) {
 function bindUploader() {
   const dz = $('dropzone');
   const input = $('fileInput');
+  const uploadTriggerBtn = $('uploadCsvTriggerBtn');
+
+  if (uploadTriggerBtn) {
+    uploadTriggerBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      input.click();
+    });
+  }
 
   dz.addEventListener('click', () => input.click());
   input.addEventListener('change', (e) => {
@@ -756,6 +788,172 @@ function bindUploader() {
   $('downloadTemplate').addEventListener('click', () => {
     window.location.href = '/api/download-template';
   });
+
+  bindHistoryGrid();
+}
+
+/* ===================== UPLOAD HISTORY GRID ===================== */
+let selectedHistoryRunId = null;
+let historyRunsCache = [];
+
+async function loadUploadHistory() {
+  const tbody = $('uploadHistoryBody');
+  const loadBtn = $('loadPreviousFileBtn');
+  const barBtn = $('loadPreviousFileBarBtn');
+  const selectedBar = $('historySelectedBar');
+  if (!tbody) return;
+
+  try {
+    const res = await api.runs();
+    const runs = (res && res.data) ? res.data : [];
+    historyRunsCache = runs;
+
+    if (!runs.length) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No files uploaded yet. Upload a CSV to view history.</td></tr>`;
+      if (loadBtn) loadBtn.disabled = true;
+      if (barBtn) barBtn.disabled = true;
+      if (selectedBar) selectedBar.style.display = 'none';
+      selectedHistoryRunId = null;
+      return;
+    }
+
+    tbody.innerHTML = runs.map((r) => {
+      const isSelected = selectedHistoryRunId === r.id;
+      const isCurrentActive = state.currentRunId ? state.currentRunId === r.id : false;
+      const statusClass = (r.status || 'Completed').toLowerCase();
+      return `
+        <tr class="history-row ${isSelected ? 'selected' : ''}" data-run-id="${r.id}">
+          <td style="text-align: center;">
+            <input type="radio" name="historyFileSelect" class="history-radio" value="${r.id}" ${isSelected ? 'checked' : ''} />
+          </td>
+          <td>
+            <div class="history-fname">
+              <i data-lucide="file-spreadsheet"></i>
+              <span title="${escapeHtml(r.filename)}">${escapeHtml(r.filename)}</span>
+              ${isCurrentActive ? '<span class="status-pill status-success" style="font-size: 10px; padding: 2px 6px; margin-left: 6px;">Active</span>' : ''}
+            </div>
+          </td>
+          <td style="font-size: 12px; color: var(--txt-2); font-family: 'JetBrains Mono', monospace;">
+            ${escapeHtml(r.timestamp || '—')}
+          </td>
+          <td>
+            <span style="font-size: 12px; font-weight: 600; color: #22d3ee;">${r.total_records || 0}</span>
+            ${r.suspicious_count > 0 ? `<span style="font-size: 11px; color: #fb7185; margin-left: 4px;">(${r.suspicious_count} flagged)</span>` : ''}
+          </td>
+          <td>
+            <span class="status-pill status-success" style="font-size: 10.5px;">${escapeHtml(r.status || 'Completed')}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+    updateHistorySelectionUI();
+  } catch (err) {
+    console.warn('Failed to load upload history:', err);
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Failed to load upload history.</td></tr>`;
+  }
+}
+
+function selectHistoryRun(runId) {
+  selectedHistoryRunId = parseInt(runId, 10);
+  document.querySelectorAll('#uploadHistoryTable tr.history-row').forEach((tr) => {
+    const id = parseInt(tr.dataset.runId, 10);
+    const radio = tr.querySelector('input[type="radio"]');
+    if (id === selectedHistoryRunId) {
+      tr.classList.add('selected');
+      if (radio) radio.checked = true;
+    } else {
+      tr.classList.remove('selected');
+      if (radio) radio.checked = false;
+    }
+  });
+  updateHistorySelectionUI();
+}
+
+function updateHistorySelectionUI() {
+  const loadBtn = $('loadPreviousFileBtn');
+  const barBtn = $('loadPreviousFileBarBtn');
+  const selectedBar = $('historySelectedBar');
+  const nameEl = $('historySelectedName');
+  const metaEl = $('historySelectedMeta');
+
+  if (!selectedHistoryRunId) {
+    if (loadBtn) loadBtn.disabled = true;
+    if (barBtn) barBtn.disabled = true;
+    if (selectedBar) selectedBar.style.display = 'none';
+    return;
+  }
+
+  const run = historyRunsCache.find((r) => r.id === selectedHistoryRunId);
+  if (loadBtn) loadBtn.disabled = false;
+  if (barBtn) barBtn.disabled = false;
+  if (selectedBar) {
+    selectedBar.style.display = 'flex';
+    if (nameEl) nameEl.textContent = run ? run.filename : `Run #${selectedHistoryRunId}`;
+    if (metaEl) metaEl.textContent = run ? `(${run.timestamp} · ${run.total_records} records)` : '';
+  }
+}
+
+async function loadSelectedPreviousFile() {
+  if (!selectedHistoryRunId) {
+    toast('info', 'No File Selected', 'Please click a CSV file in the history grid first.');
+    return;
+  }
+
+  const run = historyRunsCache.find((r) => r.id === selectedHistoryRunId);
+  const fname = run ? run.filename : `Run #${selectedHistoryRunId}`;
+
+  setLoader(true);
+  try {
+    const res = await api.activateRun(selectedHistoryRunId);
+    state.currentRunId = selectedHistoryRunId;
+    state.page = 1;
+
+    if (res.stats) {
+      showRunStats(res.stats);
+    }
+
+    await loadStats(state.currentRunId);
+    await loadLogs(state.currentRunId);
+    await loadThreats();
+    await loadUploadHistory();
+
+    toast('success', 'File Loaded', `Successfully loaded previous file: "${fname}" with ${res.stats?.valid || res.run?.valid_records || 0} valid records.`);
+  } catch (err) {
+    toast('error', 'Load Failed', err.message || 'Failed to load selected previous file.');
+  } finally {
+    setLoader(false);
+  }
+}
+
+function bindHistoryGrid() {
+  const tbody = $('uploadHistoryBody');
+  const loadBtn = $('loadPreviousFileBtn');
+  const barBtn = $('loadPreviousFileBarBtn');
+
+  if (tbody) {
+    tbody.addEventListener('click', (e) => {
+      const row = e.target.closest('tr.history-row');
+      if (row && row.dataset.runId) {
+        selectHistoryRun(row.dataset.runId);
+      }
+    });
+  }
+
+  if (loadBtn) {
+    loadBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadSelectedPreviousFile();
+    });
+  }
+
+  if (barBtn) {
+    barBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadSelectedPreviousFile();
+    });
+  }
 }
 
 /* ===================== THREATS ===================== */
@@ -774,18 +972,30 @@ async function loadThreats() {
     $('navThreatBadge').dataset.zero = rows.length === 0;
 
     if (!rows.length) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No threats detected yet.</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="9">No threats detected yet.</td></tr>`;
     } else {
-      tbody.innerHTML = rows.map((r) => `
+      const getAttackType = (ruleId) => {
+        const id = (ruleId || '').toUpperCase();
+        if (id === 'RULE-01') return { label: 'Brute Force', color: '#fb7185', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.35)' };
+        if (id === 'RULE-02') return { label: 'Account Takeover', color: '#fbbf24', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' };
+        if (id === 'RULE-03') return { label: 'Anomalous Access / DDoS', color: '#60a5fa', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.35)' };
+        return { label: 'Suspicious Activity', color: '#a78bfa', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' };
+      };
+      tbody.innerHTML = rows.map((r) => {
+        const atk = getAttackType(r.rule_id);
+        return `
         <tr class="clickable-row" onclick="openFindingModal(${r.id})" title="Click to inspect finding details">
           <td class="mono">#${r.id}</td>
           <td class="mono">${r.detected_at || '—'}</td>
-          <td class="mono">Rule ${r.rule_id || '—'}</td>
+          <td class="mono">${r.source_ip || '—'}</td>
+          <td class="mono" style="color:var(--cyan);font-weight:600;">${r.rule_id || '—'}</td>
+          <td><span style="display:inline-block;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:600;color:${atk.color};background:${atk.bg};border:1px solid ${atk.border};white-space:nowrap;">${atk.label}</span></td>
           <td style="color:var(--txt-0);font-weight:500;">${r.rule_name || r.rule_id}</td>
           <td>${sevBadge(r.severity)}</td>
-          <td style="color:var(--txt-2);font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.description || '—'}</td>
+          <td style="color:var(--txt-2);font-size:12px;line-height:1.4;" class="threat-evidence-cell">${escapeHtml(r.description || '—')}</td>
           <td><span class="sev Informational" style="color:#a78bfa;">${r.status || 'New'}</span></td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
     }
   } catch (e) {
     console.error(e);
@@ -1108,6 +1318,20 @@ function initLandingIntro() {
       toast('info', 'Intro Replayed', 'Playing The Three Bugs animation.');
     });
   }
+
+  const switchUserBtn = $('landingSwitchUserBtn');
+  if (switchUserBtn) {
+    switchUserBtn.addEventListener('click', async () => {
+      try { await api.logout(); } catch (_) {}
+      currentUser = null;
+      updateAuthUI(null);
+      const loginOverlay = $('neuLoginOverlay');
+      if (loginOverlay) {
+        loginOverlay.classList.remove('hidden', 'login-unlocking');
+      }
+      dismissIntro();
+    });
+  }
 }
 
 /* ===================== CYBER CANVAS PARTICLE NETWORK ===================== */
@@ -1212,35 +1436,62 @@ function initCyberCursor() {
   let targetX = -100;
   let targetY = -100;
   let rafPending = false;
+  let isHover = false;
+  let isDown = false;
 
   function renderCursor() {
-    cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+    // Center the whole paw directly on the mouse pointer (offset by half of 20px)
+    const offsetX = targetX - 10;
+    const offsetY = targetY - 10;
+    const scale = isDown ? 0.8 : (isHover ? 1.2 : 1.0);
+    const rotate = isDown ? -10 : (isHover ? -6 : 0);
+    cursor.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0) scale(${scale}) rotate(${rotate}deg)`;
     rafPending = false;
+  }
+
+  function requestRender() {
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(renderCursor);
+    }
   }
 
   window.addEventListener('mousemove', (e) => {
     targetX = e.clientX;
     targetY = e.clientY;
     document.body.classList.add('cursor-active');
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(renderCursor);
-    }
+    requestRender();
   }, { passive: true });
+
+  window.addEventListener('mousedown', () => {
+    isDown = true;
+    document.body.classList.add('cursor-down');
+    requestRender();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDown = false;
+    document.body.classList.remove('cursor-down');
+    requestRender();
+  });
 
   document.addEventListener('mouseleave', () => {
     document.body.classList.remove('cursor-active');
   });
 
-  const interactiveSelector = 'button, a, input, select, label, textarea, .qa, .dropzone, .nav-item, .kpi, .icon-btn, .clickable, .bug-entity, [role="button"]';
+  const interactiveSelector = 'button, a, input, select, label, textarea, .qa, .dropzone, .nav-item, .kpi, .icon-btn, .clickable, .clickable-row, tr, .bug-entity, [role="button"], [onclick], .history-row';
   document.addEventListener('mouseover', (e) => {
     if (e.target.closest && e.target.closest(interactiveSelector)) {
+      isHover = true;
       document.body.classList.add('cursor-hover');
+      requestRender();
     }
   }, { passive: true });
   document.addEventListener('mouseout', (e) => {
     if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(interactiveSelector)) {
+      isHover = false;
       document.body.classList.remove('cursor-hover');
+      requestRender();
     }
   }, { passive: true });
 }
@@ -1354,6 +1605,10 @@ function initNeumorphicAuth() {
       try {
         const { status, data } = await api.login(username, password);
 
+        if (status === 200 && data.ok && data.data?.mfa_required) {
+          openLoginMfaModal(data.data.methods || { totp: true, email: false });
+          return;
+        }
         if (status === 200 && data.ok) {
           currentUser = data.data.user;
           updateAuthUI(currentUser);
@@ -1421,7 +1676,46 @@ function initNeumorphicAuth() {
     } catch (_) {}
     currentUser = null;
     toast('info', 'Logged Out', 'Session ended safely.');
-    if (overlay) overlay.classList.remove('hidden');
+
+    const stage = $('bugTeleportStage');
+    const flyerBit = $('bugFlyerBit');
+    const flyerGlitch = $('bugFlyerGlitch');
+    const flyerScout = $('bugFlyerScout');
+    const appShell = document.querySelector('.app-shell');
+
+    triggerScreenFlash();
+    if (appShell) appShell.classList.remove('dashboard-unlocked');
+
+    if (overlay) {
+      overlay.classList.remove('hidden', 'login-unlocking');
+    }
+
+    if (stage && flyerBit && flyerGlitch && flyerScout) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      stage.classList.add('active');
+      flyerBit.style.transform = `translate(${-80}px, ${h * 0.2}px) scale(0.7)`;
+      flyerGlitch.style.transform = `translate(${w * 0.5 - 36}px, ${-80}px) scale(0.7)`;
+      flyerScout.style.transform = `translate(${w + 80}px, ${h * 0.2}px) scale(0.7)`;
+      flyerBit.style.opacity = '1';
+      flyerGlitch.style.opacity = '1';
+      flyerScout.style.opacity = '1';
+
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          flyerBit.style.transform = `translate(${w * 0.38 - 36}px, ${h * 0.28}px) scale(1.05) rotate(-6deg)`;
+          flyerGlitch.style.transform = `translate(${w * 0.5 - 36}px, ${h * 0.25}px) scale(1.15) rotate(0deg)`;
+          flyerScout.style.transform = `translate(${w * 0.62 - 36}px, ${h * 0.28}px) scale(1.05) rotate(6deg)`;
+        }, 30);
+        setTimeout(() => {
+          flyerBit.style.opacity = '0';
+          flyerGlitch.style.opacity = '0';
+          flyerScout.style.opacity = '0';
+          stage.classList.remove('active');
+        }, 650);
+      });
+    }
+
     if (usernameInput) usernameInput.value = '';
     if (passwordInput) passwordInput.value = '';
     updateAuthUI(null);
@@ -1449,6 +1743,10 @@ function initNeumorphicAuth() {
 
       try {
         const { status, data } = await api.changePassword(curr, newP);
+        if (status === 200 && data.ok && data.data?.mfa_required) {
+          openLoginMfaModal(data.data.methods || { totp: true, email: false });
+          return;
+        }
         if (status === 200 && data.ok) {
           toast('success', 'Password Updated', 'Session invalidated for security. Please log in again.');
           changePasswordForm.reset();
@@ -1471,20 +1769,11 @@ function initNeumorphicAuth() {
 
 async function checkSession() {
   const overlay = $('neuLoginOverlay');
-  try {
-    const res = await api.me();
-    if (res.ok && res.data?.user) {
-      currentUser = res.data.user;
-      updateAuthUI(currentUser);
-      if (overlay) overlay.classList.add('hidden');
-    } else {
-      if (overlay) overlay.classList.remove('hidden');
-      updateAuthUI(null);
-    }
-  } catch (e) {
-    if (overlay) overlay.classList.remove('hidden');
-    updateAuthUI(null);
-  }
+  // Enforce fresh authentication on every page load/refresh for SOC security
+  try { await api.logout(); } catch (_) {}
+  currentUser = null;
+  if (overlay) overlay.classList.remove('hidden');
+  updateAuthUI(null);
 }
 
 function updateAuthUI(user) {
@@ -1492,18 +1781,238 @@ function updateAuthUI(user) {
   const topbarRole = $('topbarUserRole');
   const settingsUser = $('settingsUsername');
   const settingsRole = $('settingsUserRoleBadge');
+  const landingActiveRow = $('landingActiveUserRow');
+  const landingActiveUser = $('landingActiveUsername');
 
   if (user) {
     if (topbarUser) topbarUser.textContent = user.username;
     if (topbarRole) topbarRole.textContent = user.role;
     if (settingsUser) settingsUser.textContent = user.username;
     if (settingsRole) settingsRole.textContent = user.role;
+    if (landingActiveRow) landingActiveRow.style.display = 'block';
+    if (landingActiveUser) landingActiveUser.textContent = `${user.username} (${user.role})`;
   } else {
     if (topbarUser) topbarUser.textContent = 'Guest';
     if (topbarRole) topbarRole.textContent = 'Unauthenticated';
     if (settingsUser) settingsUser.textContent = 'Not Logged In';
     if (settingsRole) settingsRole.textContent = 'None';
+    if (landingActiveRow) landingActiveRow.style.display = 'none';
   }
+  applyRbacUi(user);
+}
+
+let currentActiveUser = null;
+
+function applyRbacUi(user) {
+  currentActiveUser = user || null;
+  const role = user ? user.role : 'Viewer';
+  const isAdmin = role === 'Admin' || role === 'Administrator';
+  const adminControls = $('rbacAdminControls');
+  const adminNotice = $('rbacAdminLockedNotice');
+
+  if (isAdmin) {
+    if (adminControls) adminControls.style.display = 'block';
+    if (adminNotice) adminNotice.style.display = 'none';
+    loadRbacUsers();
+  } else {
+    if (adminControls) adminControls.style.display = 'none';
+    if (adminNotice) adminNotice.style.display = 'block';
+  }
+
+  // Enforce Viewer read-only restrictions on mutating controls
+  const isViewer = role === 'Viewer';
+  const mutatingIds = ['uploadCsvTriggerBtn', 'loadSampleBtn', 'newInvBtn', 'createInvBtn'];
+  mutatingIds.forEach((id) => {
+    const el = $(id);
+    if (el) {
+      el.disabled = isViewer;
+      el.style.opacity = isViewer ? '0.45' : '';
+      el.style.pointerEvents = isViewer ? 'none' : '';
+      if (isViewer) el.title = 'Viewer role is read-only';
+    }
+  });
+}
+
+async function loadRbacUsers() {
+  const tbody = $('rbacUsersBody');
+  if (!tbody) return;
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Unable to load users (Admin access required).</td></tr>';
+      return;
+    }
+    const json = await res.json();
+    const users = json.data || [];
+    if (!users.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No users found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map((u) => {
+      const isSelf = currentActiveUser && currentActiveUser.id === u.id;
+      return `
+        <tr>
+          <td class="mono">#${u.id}</td>
+          <td style="font-weight:600;color:var(--txt-0);">
+            ${escapeHtml(u.username)} ${isSelf ? '<span style="font-size:10px;color:var(--cyan);margin-left:4px;">(You)</span>' : ''}
+            ${u.email ? `<div style="font-size:11px;color:var(--txt-2);font-weight:400;">${escapeHtml(u.email)}</div>` : '<div style="font-size:11px;color:var(--txt-3);font-weight:400;">No email</div>'}
+          </td>
+          <td>
+            <select class="select" style="padding:4px 8px;font-size:12px;" ${isSelf ? 'disabled title="Cannot change your own active role"' : ''} onchange="updateSocUserRole(${u.id}, this.value)">
+              <option value="Admin" ${u.role === 'Admin' || u.role === 'Administrator' ? 'selected' : ''}>Admin</option>
+              <option value="Analyst" ${u.role === 'Analyst' ? 'selected' : ''}>Analyst</option>
+              <option value="Viewer" ${u.role === 'Viewer' ? 'selected' : ''}>Viewer</option>
+            </select>
+          </td>
+          <td style="text-align:right;white-space:nowrap;">
+            <button class="btn ghost" style="padding:4px 10px;font-size:11.5px;color:var(--cyan);border-color:rgba(34,211,238,0.3);margin-right:6px;" onclick="openEditSocUserModal(${u.id}, '${escapeHtml(u.username)}', '${escapeHtml(u.email || '')}', '${escapeHtml(u.role)}', ${isSelf})">
+              <i data-lucide="pencil" style="width:13px;height:13px;"></i> Edit
+            </button>
+            <button class="btn ghost" style="padding:4px 10px;font-size:11.5px;color:#fb7185;border-color:rgba(244,63,94,0.3);" ${isSelf ? 'disabled title="Cannot delete your own account"' : ''} onclick="deleteSocUser(${u.id}, '${escapeHtml(u.username)}')">
+              <i data-lucide="trash-2" style="width:13px;height:13px;"></i> Delete
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    console.error('Failed to load RBAC users:', e);
+  }
+}
+
+function openEditSocUserModal(userId, username, email, role, isSelf) {
+  const existing = document.getElementById('editSocUserOverlay');
+  if (existing) existing.remove();
+  const normalizedRole = role === 'Administrator' ? 'Admin' : role;
+  const overlay = document.createElement('div');
+  overlay.id = 'editSocUserOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(4,7,15,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:420px;background:linear-gradient(160deg,rgba(18,24,42,0.98),rgba(9,13,24,0.98));border:1px solid rgba(34,211,238,0.4);border-radius:16px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.8);">
+      <h3 style="margin:0 0 14px;color:#fff;font-size:17px;">Edit SOC User #${userId}</h3>
+      <div style="margin-bottom:12px;">
+        <label class="modal-label">Username</label>
+        <input type="text" id="editSocUsername" value="${escapeHtml(username)}" minlength="3" style="width:100%;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;" />
+      </div>
+      <div style="margin-bottom:12px;">
+        <label class="modal-label">Email (for OTP)</label>
+        <input type="email" id="editSocEmail" value="${escapeHtml(email)}" placeholder="user@org.com" style="width:100%;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;" />
+      </div>
+      <div style="margin-bottom:18px;">
+        <label class="modal-label">Role</label>
+        <select id="editSocRole" class="select" style="width:100%;" ${isSelf ? 'disabled title="Cannot change your own active role"' : ''}>
+          <option value="Admin" ${normalizedRole === 'Admin' ? 'selected' : ''}>Admin</option>
+          <option value="Analyst" ${normalizedRole === 'Analyst' ? 'selected' : ''}>Analyst</option>
+          <option value="Viewer" ${normalizedRole === 'Viewer' ? 'selected' : ''}>Viewer</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn ghost" id="editSocCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="editSocSaveBtn">Save Changes</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#editSocCancelBtn').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#editSocSaveBtn').addEventListener('click', async () => {
+    const newUsername = overlay.querySelector('#editSocUsername').value.trim();
+    const newEmail = overlay.querySelector('#editSocEmail').value.trim();
+    const newRole = overlay.querySelector('#editSocRole').value;
+    const res = await fetch(`/api/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: newUsername, email: newEmail, role: newRole })
+    });
+    const json = await res.json();
+    if (res.ok && json.ok) {
+      toast('success', 'User Updated', `Saved changes for ${json.data.username}.`);
+      if (isSelf && currentUser) {
+        currentUser.username = json.data.username;
+        updateAuthUI(currentUser);
+      }
+      overlay.remove();
+      loadRbacUsers();
+    } else {
+      toast('error', 'Update Failed', json.error?.message || 'Could not update user.');
+    }
+  });
+}
+
+async function updateSocUserRole(userId, newRole) {
+  try {
+    const res = await fetch(`/api/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole })
+    });
+    const json = await res.json();
+    if (res.ok && json.ok) {
+      toast('success', 'Role Updated', `${json.data.username} is now ${newRole}.`);
+      loadRbacUsers();
+    } else {
+      toast('error', 'Update Failed', json.error?.message || 'Could not update role.');
+      loadRbacUsers();
+    }
+  } catch (e) {
+    toast('error', 'Error', 'Failed to communicate with server.');
+  }
+}
+
+function showCyberConfirm(title, message, confirmLabel = 'Confirm', onConfirm) {
+  const existing = document.getElementById('cyberConfirmOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cyberConfirmOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(4,7,15,0.78);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:420px;background:linear-gradient(160deg,rgba(18,24,42,0.98),rgba(9,13,24,0.98));border:1px solid rgba(244,63,94,0.45);border-radius:16px;padding:22px 24px;box-shadow:0 20px 50px rgba(0,0,0,0.75),0 0 28px rgba(244,63,94,0.2);">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(244,63,94,0.14);border:1px solid rgba(244,63,94,0.4);display:grid;place-items:center;color:#fb7185;">
+          <i data-lucide="alert-triangle" style="width:18px;height:18px;"></i>
+        </div>
+        <h3 style="margin:0;font-size:16px;font-weight:700;color:#fff;">${escapeHtml(title)}</h3>
+      </div>
+      <p style="margin:0 0 20px;font-size:13.5px;line-height:1.5;color:var(--txt-1);">${message}</p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn ghost" id="cyberConfirmCancel">Cancel</button>
+        <button type="button" class="btn primary" id="cyberConfirmOk" style="background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;box-shadow:0 6px 20px rgba(244,63,94,0.4);">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  if (window.lucide) lucide.createIcons();
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#cyberConfirmCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#cyberConfirmOk').addEventListener('click', () => {
+    close();
+    if (typeof onConfirm === 'function') onConfirm();
+  });
+}
+
+async function deleteSocUser(userId, username) {
+  showCyberConfirm(
+    'Revoke SOC Access',
+    `Are you sure you want to revoke access and delete SOC user <strong style="color:#22d3ee;">${escapeHtml(username)}</strong>? This action cannot be undone.`,
+    'Revoke & Delete',
+    async () => {
+      try {
+        const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          toast('success', 'User Deleted', `Removed user ${username}.`);
+          loadRbacUsers();
+        } else {
+          toast('error', 'Delete Failed', json.error?.message || 'Could not delete user.');
+        }
+      } catch (e) {
+        toast('error', 'Error', 'Failed to communicate with server.');
+      }
+    }
+  );
 }
 
 /* ===================== INIT ===================== */
@@ -1513,6 +2022,82 @@ document.addEventListener('DOMContentLoaded', () => {
   initCyberCanvas();
   initCyberCursor();
   initNeumorphicAuth();
+  checkSession();
+
+  // Settings sub-tabs switching
+  document.querySelectorAll('.settings-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.settingsTab;
+      document.querySelectorAll('.settings-tab-btn').forEach((b) => {
+        b.classList.remove('active', 'primary');
+        b.classList.add('ghost');
+      });
+      btn.classList.add('active', 'primary');
+      btn.classList.remove('ghost');
+
+      document.querySelectorAll('.settings-tab-panel').forEach((panel) => {
+        panel.style.display = panel.id === `settings-tab-${target}` ? 'block' : 'none';
+      });
+    });
+  });
+
+  const changeUsernameForm = $('changeUsernameForm');
+  if (changeUsernameForm) {
+    changeUsernameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newUsername = $('newUsernameInput').value.trim();
+      if (newUsername.length < 3) {
+        toast('error', 'Validation Error', 'Username must be at least 3 characters.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/change-username', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: newUsername })
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          if (currentUser) currentUser.username = json.data.username;
+          updateAuthUI(currentUser || { username: json.data.username, role: json.data.role });
+          changeUsernameForm.reset();
+          toast('success', 'Username Updated', `Active username changed to ${json.data.username}.`);
+        } else {
+          toast('error', 'Update Failed', json.error?.message || 'Could not update username.');
+        }
+      } catch (err) {
+        toast('error', 'Error', 'Failed to communicate with server.');
+      }
+    });
+  }
+
+  const createUserForm = $('createUserForm');
+  if (createUserForm) {
+    createUserForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = $('newSocUsername').value.trim();
+      const email = $('newSocEmail') ? $('newSocEmail').value.trim() : '';
+      const password = $('newSocPassword').value;
+      const role = $('newSocRole').value;
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, email, password, role })
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          toast('success', 'User Created', `Created ${username} (${role}).`);
+          createUserForm.reset();
+          loadRbacUsers();
+        } else {
+          toast('error', 'Creation Failed', json.error?.message || 'Could not create user.');
+        }
+      } catch (err) {
+        toast('error', 'Error', 'Failed to communicate with server.');
+      }
+    });
+  }
   bindAnalyzerFilters();
   bindThreatFilters();
   bindUploader();
@@ -1521,6 +2106,320 @@ document.addEventListener('DOMContentLoaded', () => {
   bindInvestigations();
   loadStats();
   loadLogs();
+  loadUploadHistory();
   loadThreats();
   loadInvestigations();
+  // Toggle MFA (Enable / Disable)
+  const toggleMfaBtn = $('toggleMfaBtn');
+  if (toggleMfaBtn) {
+    let mfaState = false;
+    toggleMfaBtn.addEventListener('click', async () => {
+      mfaState = !mfaState;
+      const res = await fetch('/api/auth/mfa/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: mfaState })
+      });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        $('toggleMfaLabel').textContent = json.data.mfa_enabled ? 'Disable MFA' : 'Enable MFA';
+        toggleMfaBtn.classList.toggle('primary', json.data.mfa_enabled);
+        toast('success', 'MFA Updated', json.data.mfa_enabled ? 'MFA is now enabled for login.' : 'MFA disabled; normal login restored.');
+      } else {
+        mfaState = !mfaState;
+        toast('error', 'MFA Error', json.error?.message || 'Could not toggle MFA.');
+      }
+    });
+  }
+
+  // Login MFA Verification Modal (supports choosing Google Auth or Email OTP)
+  window.openLoginMfaModal = function(methods) {
+    const existing = document.getElementById('loginMfaOverlay');
+    if (existing) existing.remove();
+    const hasTotp = !!methods.totp;
+    const hasEmail = !!methods.email;
+    let selectedMethod = hasTotp ? 'totp' : 'email';
+
+    const mfaOverlay = document.createElement('div');
+    mfaOverlay.id = 'loginMfaOverlay';
+    mfaOverlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(4,7,15,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
+    mfaOverlay.innerHTML = `
+      <div style="width:100%;max-width:410px;background:linear-gradient(160deg,rgba(18,24,42,0.98),rgba(9,13,24,0.98));border:1px solid rgba(34,211,238,0.45);border-radius:16px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.8);">
+        <h3 style="margin:0 0 6px;color:#fff;font-size:17px;">Two-Factor Authentication</h3>
+        <p style="margin:0 0 14px;font-size:12.5px;color:var(--txt-2);">Choose your preferred verification method:</p>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          ${hasTotp ? '<button type="button" class="btn primary mfa-method-btn" data-method="totp" style="flex:1;font-size:12px;">Google Auth</button>' : ''}
+          ${hasEmail ? '<button type="button" class="btn ' + (hasTotp ? 'ghost' : 'primary') + ' mfa-method-btn" data-method="email" style="flex:1;font-size:12px;">Email OTP</button>' : ''}
+        </div>
+        <div id="mfaEmailSendRow" style="display:${selectedMethod === 'email' ? 'flex' : 'none'};justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-size:12px;color:var(--txt-2);">Send 6-digit code to your email</span>
+          <button type="button" class="btn secondary" id="mfaSendEmailBtn" style="font-size:11.5px;padding:5px 10px;">Send OTP</button>
+        </div>
+        <input type="text" id="loginMfaCodeInput" autocomplete="off" class="neu-input" placeholder="Enter 6-digit code" maxlength="6" style="width:100%;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;color:#fff;" />
+        <div id="loginMfaError" style="display:none;font-size:12px;color:#fb7185;background:rgba(244,63,94,0.12);border:1px solid rgba(244,63,94,0.35);border-radius:8px;padding:8px 12px;margin-bottom:14px;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button type="button" class="btn ghost" id="loginMfaCancelBtn">Cancel</button>
+          <button type="button" class="btn primary" id="loginMfaVerifyBtn">Verify &amp; Login</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(mfaOverlay);
+
+    mfaOverlay.querySelectorAll('.mfa-method-btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        selectedMethod = b.dataset.method;
+        mfaOverlay.querySelectorAll('.mfa-method-btn').forEach(x => { x.classList.remove('primary'); x.classList.add('ghost'); });
+        b.classList.add('primary'); b.classList.remove('ghost');
+        mfaOverlay.querySelector('#mfaEmailSendRow').style.display = selectedMethod === 'email' ? 'flex' : 'none';
+      });
+    });
+
+    const sendBtn = mfaOverlay.querySelector('#mfaSendEmailBtn');
+    if (sendBtn) {
+      sendBtn.addEventListener('click', async () => {
+        const res = await fetch('/api/auth/login/send-otp', { method: 'POST' });
+        const json = await res.json();
+        if (res.ok && json.ok) toast('success', 'OTP Sent', json.data.message);
+        else toast('error', 'OTP Error', json.error?.message || 'Failed to send OTP.');
+      });
+    }
+
+    mfaOverlay.querySelector('#loginMfaCancelBtn').addEventListener('click', () => mfaOverlay.remove());
+    mfaOverlay.querySelector('#loginMfaVerifyBtn').addEventListener('click', async () => {
+      const code = mfaOverlay.querySelector('#loginMfaCodeInput').value.trim();
+      const res = await fetch('/api/auth/login/mfa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, method: selectedMethod })
+      });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        mfaOverlay.remove();
+        currentUser = json.data.user;
+        updateAuthUI(currentUser);
+        toast('success', 'Authentication Successful', `Welcome back, ${currentUser.username} (${currentUser.role}).`);
+        animateLoginToDashboardTransition(() => {
+          const loginOv = $('neuLoginOverlay');
+          if (loginOv) loginOv.classList.add('hidden');
+        });
+      } else {
+        const errEl = mfaOverlay.querySelector('#loginMfaError');
+        if (errEl) {
+          errEl.style.display = 'block';
+          errEl.textContent = json.error?.message || 'Wrong or expired 6-digit code. Please try again.';
+        }
+        toast('error', 'Invalid Code', json.error?.message || 'Wrong or expired verification code.');
+      }
+    });
+  };
+
+  // Google Authenticator MFA Setup
+  const setupMfaBtn = $('setupMfaBtn');
+  const verifyMfaBtn = $('verifyMfaBtn');
+  if (setupMfaBtn) {
+    setupMfaBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/auth/mfa/setup', { method: 'POST' });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          $('mfaSecretText').textContent = json.data.secret;
+          $('mfaSetupBox').style.display = 'block';
+          toast('info', 'MFA Secret Generated', 'Add this secret key in Google Authenticator and verify.');
+        } else {
+          toast('error', 'MFA Error', json.error?.message || 'Could not start MFA setup.');
+        }
+      } catch (e) {
+        toast('error', 'Error', 'Failed to communicate with server.');
+      }
+    });
+  }
+  if (verifyMfaBtn) {
+    verifyMfaBtn.addEventListener('click', async () => {
+      const code = $('mfaVerifyCodeInput').value.trim();
+      try {
+        const res = await fetch('/api/auth/mfa/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          $('mfaSetupBox').style.display = 'none';
+          toast('success', 'Google Auth Enabled', 'MFA is now active on your account.');
+        } else {
+          toast('error', 'Verification Failed', json.error?.message || 'Invalid 6-digit code.');
+        }
+      } catch (e) {
+        toast('error', 'Error', 'Failed to verify MFA code.');
+      }
+    });
+  }
+
+  // Forgot Password Modal (Login & Settings)
+  function openForgotPasswordModal() {
+    const existing = document.getElementById('forgotPwdOverlay');
+    if (existing) existing.remove();
+    let activeMethod = 'email';
+    let verifiedCode = '';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'forgotPwdOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(4,7,15,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `
+      <div style="width:100%;max-width:450px;background:linear-gradient(160deg,rgba(18,24,42,0.98),rgba(9,13,24,0.98));border:1px solid rgba(34,211,238,0.4);border-radius:16px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.8);">
+        <h3 style="margin:0 0 6px;color:#fff;font-size:17px;">Reset Password (Google Auth)</h3>
+        <p style="margin:0 0 14px;font-size:12.5px;color:var(--txt-2);">Search your SOC username, verify with your 6-digit Google Authenticator code, then reset.</p>
+
+        <!-- Step 1: Search Username -->
+        <div style="margin-bottom:12px;">
+          <label class="modal-label">1. Enter Username</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="fpUsername" autocomplete="off" class="neu-input" placeholder="Enter username" style="flex:1;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;" />
+            <button type="button" class="btn secondary" id="fpSearchBtn">Search</button>
+          </div>
+        </div>
+
+        <div id="fpStatusMsg" style="font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:12px;display:none;"></div>
+
+        <!-- Step 2: Google Auth Verification -->
+        <div id="fpRecoveryBox" style="display:none;">
+          <label class="modal-label">2. Google Authenticator Code</label>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <input type="text" id="fpCode" autocomplete="off" class="neu-input" placeholder="Enter 6-digit Google Auth code" maxlength="6" style="flex:1;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;" />
+            <button type="button" class="btn primary" id="fpVerifyCodeBtn">Verify</button>
+          </div>
+        </div>
+
+        <!-- Step 3: New Password & Confirm Password (unlocked after code verification) -->
+        <div id="fpNewPwdBox" style="display:none;margin-bottom:18px;">
+          <label class="modal-label">3. New Password (min 8 chars)</label>
+          <input type="password" id="fpNewPwd" class="neu-input" placeholder="New secure password" minlength="8" style="width:100%;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;margin-bottom:10px;" />
+          <label class="modal-label">Confirm Password</label>
+          <input type="password" id="fpConfirmPwd" class="neu-input" placeholder="Repeat new password" minlength="8" style="width:100%;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;" />
+        </div>
+
+        <!-- Step 4: Post-Reset -->
+        <div id="fpDoneBox" style="display:none;text-align:center;padding:10px 0;">
+          <div style="color:#34d399;font-weight:700;font-size:15px;margin-bottom:8px;">✓ Password Reset Complete</div>
+          <p style="font-size:12.5px;color:var(--txt-2);margin:0 0 16px;">Your password has been updated. Return to the Login page to sign in.</p>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button type="button" class="btn primary" id="fpGoLoginBtn">Go to Login Page</button>
+          </div>
+        </div>
+
+        <div id="fpFooterBtns" style="display:flex;gap:10px;justify-content:flex-end;">
+          <button type="button" class="btn ghost" id="fpCancelBtn">Cancel</button>
+          <button type="button" class="btn primary" id="fpResetBtn" style="display:none;">Save Password</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const statusEl = overlay.querySelector('#fpStatusMsg');
+    const setStatus = (msg, ok) => {
+      statusEl.style.display = 'block';
+      statusEl.style.color = ok ? '#34d399' : '#fb7185';
+      statusEl.style.background = ok ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)';
+      statusEl.style.border = ok ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(244,63,94,0.3)';
+      statusEl.textContent = msg;
+    };
+
+    overlay.querySelector('#fpCancelBtn').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#fpSearchBtn').addEventListener('click', async () => {
+      const username = overlay.querySelector('#fpUsername').value.trim();
+      const res = await fetch('/api/auth/forgot-password/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        overlay.querySelector('#fpRecoveryBox').style.display = 'none';
+        setStatus(json.error?.message || 'Username not found.', false);
+        return;
+      }
+      const d = json.data;
+      if (!d.has_totp) {
+        overlay.querySelector('#fpRecoveryBox').style.display = 'none';
+        setStatus('Google Authenticator is not connected to this account.', false);
+        return;
+      }
+      activeMethod = 'totp';
+      overlay.querySelector('#fpRecoveryBox').style.display = 'block';
+      setStatus(`Account "${d.username}" found! Enter your 6-digit Google Authenticator code.`, true);
+    });
+
+    const verifyBtn = overlay.querySelector('#fpVerifyCodeBtn');
+    verifyBtn.addEventListener('click', async () => {
+      const username = overlay.querySelector('#fpUsername').value.trim();
+      const code = overlay.querySelector('#fpCode').value.trim();
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = 'Verifying...';
+      try {
+        const res = await fetch('/api/auth/forgot-password/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, code, method: 'totp' })
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          verifiedCode = code;
+          verifyBtn.textContent = 'Verified ✓';
+          verifyBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+          setStatus('Verified ✓ — Enter and confirm your new password below.', true);
+          overlay.querySelector('#fpNewPwdBox').style.display = 'block';
+          overlay.querySelector('#fpResetBtn').style.display = 'inline-flex';
+        } else {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = 'Verify';
+          setStatus(json.error?.message || 'Wrong or expired verification code.', false);
+        }
+      } catch (e) {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify';
+        setStatus('Network error while verifying code.', false);
+      }
+    });
+
+    overlay.querySelector('#fpResetBtn').addEventListener('click', async () => {
+      const username = overlay.querySelector('#fpUsername').value.trim();
+      const new_password = overlay.querySelector('#fpNewPwd').value;
+      const confirm_password = overlay.querySelector('#fpConfirmPwd').value;
+      if (new_password.length < 8) {
+        setStatus('Password must be at least 8 characters.', false);
+        return;
+      }
+      if (new_password !== confirm_password) {
+        setStatus('Passwords do not match.', false);
+        return;
+      }
+      const res = await fetch('/api/auth/forgot-password/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, code: verifiedCode, new_password })
+      });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        overlay.querySelector('#fpRecoveryBox').style.display = 'none';
+        overlay.querySelector('#fpNewPwdBox').style.display = 'none';
+        overlay.querySelector('#fpFooterBtns').style.display = 'none';
+        overlay.querySelector('#fpDoneBox').style.display = 'block';
+        setStatus('Password saved successfully!', true);
+
+        overlay.querySelector('#fpGoLoginBtn').addEventListener('click', () => {
+          overlay.remove();
+          const loginOv = $('neuLoginOverlay');
+          if (loginOv) loginOv.classList.remove('hidden', 'login-unlocking');
+        });
+      } else {
+        setStatus(json.error?.message || 'Could not reset password.', false);
+      }
+    });
+  }
+
+  const loginForgotPwdBtn = $('loginForgotPwdBtn');
+  const settingsForgotPwdBtn = $('settingsForgotPwdBtn');
+  if (loginForgotPwdBtn) loginForgotPwdBtn.addEventListener('click', openForgotPasswordModal);
+  if (settingsForgotPwdBtn) settingsForgotPwdBtn.addEventListener('click', openForgotPasswordModal);
 });
