@@ -22,6 +22,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from database import init_db, get_db_connection
 from csv_processor import process_csv_content
 from detector import analyze_records
+from simulator import generate_simulation_csv, SCENARIOS
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
@@ -1531,54 +1532,65 @@ def upload_file():
                 pass
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/load-sample', methods=['POST'])
-def load_sample():
+@app.route('/api/simulate/scenarios', methods=['GET'])
+def api_simulate_scenarios():
+    return jsonify({'ok': True, 'data': SCENARIOS})
+
+
+@app.route('/api/simulate', methods=['POST'])
+def api_simulate():
     client_ip = request.remote_addr or 'unknown'
-    if not check_rate_limit(f"{client_ip}:load-sample", limit_seconds=0.05):
+    if not check_rate_limit(f"{client_ip}:simulate", limit_seconds=0.05):
         return jsonify({'ok': False, 'error': {'code': 'RATE_LIMIT_EXCEEDED', 'message': 'Too many rapid requests.'}}), 429
 
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    sample_path = os.path.join(root_dir, 'data', 'sample_logs.csv')
-    if not os.path.exists(sample_path):
-        sample_path = os.path.join(os.getcwd(), 'data', 'sample_logs.csv')
-    if not os.path.exists(sample_path):
-        return jsonify({'error': f'Sample dataset file not found at {sample_path}.'}), 404
-        
+    data = request.get_json(silent=True) or {}
+    scenario = (data.get('scenario') or 'mixed').strip()
+    event_count = data.get('count')
+    if event_count is not None:
+        try:
+            event_count = max(20, min(500, int(event_count)))
+        except (TypeError, ValueError):
+            event_count = None
+
     try:
-        with open(sample_path, 'rb') as f:
-            raw_bytes = f.read()
+        raw_bytes, filename, sim_meta = generate_simulation_csv(scenario=scenario, event_count=event_count)
+
+        upload_dir = cfg.UPLOAD_FOLDER if hasattr(cfg, 'UPLOAD_FOLDER') else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, filename)
+        with open(file_path, 'wb') as f:
+            f.write(raw_bytes)
 
         sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
         stream = io.StringIO(raw_bytes.decode('utf-8', errors='replace'))
         parsed = process_csv_content(stream)
-            
+
         valid_records = parsed['valid_records']
         total_records = parsed['total']
         invalid_count = parsed['invalid_count']
-        
+
         analysis_result = analyze_records(valid_records)
         final_records = analysis_result['records']
         detections = analysis_result['detections']
         findings = analysis_result['findings']
         suspicious_count = analysis_result['suspicious_count']
-        
+
         investigation_id = 1
-        
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        display_name = f"{filename} (Live Sim)"
         cursor.execute('''
             INSERT INTO analysis_runs (investigation_id, filename, total_records, valid_records, invalid_records, suspicious_count, status, sha256_hash, stored_filename, rules_evaluated)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (investigation_id, 'sample_logs.csv (Demo)', total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, 'data/sample_logs.csv', 3))
+        ''', (investigation_id, display_name, total_records, len(final_records), invalid_count, suspicious_count, 'Completed', sha256_hash, filename, 3))
         run_id = cursor.lastrowid
-        
+
         cursor.execute('''
             INSERT INTO evidence (run_id, original_filename, stored_filename, file_path, file_size, sha256_hash, verification_status)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (run_id, 'sample_logs.csv (Demo)', 'sample_logs.csv', sample_path, len(raw_bytes), sha256_hash, 'Verified'))
+        ''', (run_id, display_name, filename, file_path, len(raw_bytes), sha256_hash, 'Verified'))
 
-        
         event_id_map = []
         for rec in final_records:
             cursor.execute('''
@@ -1586,38 +1598,39 @@ def load_sample():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (run_id, rec['timestamp'], rec['normalized_timestamp'], rec['source_ip'], rec['event_type'], rec['username'], rec['status'], rec['severity'], rec['detection_reason']))
             event_id_map.append(cursor.lastrowid)
-            
+
         for det in detections:
             cursor.execute('''
                 INSERT INTO detections (run_id, timestamp, source_ip, rule_triggered, severity, evidence, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (run_id, det['timestamp'], det['source_ip'], det['rule_triggered'], det['severity'], det['evidence'], det['status']))
-            
+
         cursor.execute('''
             INSERT INTO audit_trail (run_id, action_type, description, related_record_type, related_record_id)
             VALUES (?, ?, ?, ?, ?)
-        ''', (run_id, 'CSV_PROCESSED', 'Built-in sample dataset loaded and analyzed.', 'analysis_runs', run_id))
+        ''', (run_id, 'CSV_PROCESSED', f"Real-time simulation ({sim_meta['scenario_name']}) generated and analyzed.", 'analysis_runs', run_id))
 
-            
         for find in findings:
             cursor.execute('''
                 INSERT INTO findings (investigation_id, analysis_run_id, rule_id, rule_name, description, severity, status, detected_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (investigation_id, run_id, find['rule_id'], find['rule_name'], find['description'], find['severity'], find['status'], find['detected_at']))
             finding_id = cursor.lastrowid
-            
+
             for evt_idx in find.get('supporting_event_ids', []):
                 if 1 <= evt_idx <= len(event_id_map):
                     real_event_id = event_id_map[evt_idx - 1]
                     cursor.execute('INSERT INTO finding_events (finding_id, event_id) VALUES (?, ?)', (finding_id, real_event_id))
-            
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({
             'success': True,
-            'message': 'Sample dataset loaded and analyzed successfully.',
+            'message': f"Live simulation ({sim_meta['scenario_name']}) generated and analyzed.",
             'sha256': sha256_hash,
+            'run_id': run_id,
+            'simulation': sim_meta,
             'stats': {
                 'total': total_records,
                 'valid': len(final_records),
@@ -1627,6 +1640,11 @@ def load_sample():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/load-sample', methods=['POST'])
+def load_sample():
+    return api_simulate()
 
 @app.route('/api/investigations', methods=['GET'])
 @login_required

@@ -174,10 +174,14 @@ const api = {
     if (!r.ok) throw new Error(data.error || 'Upload failed.');
     return data;
   },
-  async loadSample() {
-    const r = await fetch('/api/load-sample', { method: 'POST' });
+  async loadSample(scenario = 'mixed') {
+    const r = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario })
+    });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Failed to load sample.');
+    if (!r.ok) throw new Error(data.error || 'Failed to run live simulation.');
     return data;
   },
   async getInvestigations(search = '', status = 'All') {
@@ -721,19 +725,103 @@ async function runUpload(file) {
 }
 
 async function runSample() {
-  setLoader(true);
+  const scenarioEl = $('simScenarioSelect');
+  const scenario = scenarioEl ? scenarioEl.value : 'mixed';
+  const scenarioLabel = scenarioEl ? scenarioEl.options[scenarioEl.selectedIndex].text.replace('Scenario: ', '') : 'Mixed SOC Attack';
+
+  const existing = document.getElementById('simProgressOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'simProgressOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(4,7,15,0.84);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:460px;background:linear-gradient(160deg,rgba(18,24,42,0.98),rgba(9,13,24,0.98));border:1px solid rgba(34,211,238,0.45);border-radius:16px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.85),0 0 30px rgba(34,211,238,0.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span id="simLiveBadge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#22d3ee;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.35);padding:4px 10px;border-radius:999px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:#22d3ee;box-shadow:0 0 8px #22d3ee;animation:pulse 1s infinite;"></span>
+          Live Simulation Started
+        </span>
+        <span id="simPctText" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#22d3ee;">0%</span>
+      </div>
+      <h3 id="simModalTitle" style="margin:0 0 6px;color:#fff;font-size:17px;">${escapeHtml(scenarioLabel)}</h3>
+      <p id="simStepText" style="margin:0 0 16px;font-size:12.5px;color:var(--txt-2);">Initializing real-time threat stream…</p>
+
+      <div style="width:100%;height:10px;background:rgba(15,23,42,0.9);border-radius:999px;overflow:hidden;border:1px solid rgba(120,145,200,0.2);margin-bottom:16px;">
+        <div id="simProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,#22d3ee,#a78bfa);box-shadow:0 0 12px rgba(34,211,238,0.6);transition:width 0.15s ease;"></div>
+      </div>
+
+      <div id="simResultsBox" style="display:none;background:rgba(10,15,30,0.75);border:1px solid rgba(52,211,153,0.3);border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="color:#34d399;font-weight:700;font-size:13px;margin-bottom:10px;">✓ Simulation Done — Results Summary</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;">
+          <div style="background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;">
+            <div style="font-size:10.5px;color:var(--txt-3);text-transform:uppercase;">Total Events</div>
+            <div id="simResTotal" style="font-size:16px;font-weight:700;color:#fff;margin-top:2px;">0</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;">
+            <div style="font-size:10.5px;color:var(--txt-3);text-transform:uppercase;">Valid Logs</div>
+            <div id="simResValid" style="font-size:16px;font-weight:700;color:#22d3ee;margin-top:2px;">0</div>
+          </div>
+          <div style="background:rgba(244,63,94,0.08);padding:8px;border-radius:8px;border:1px solid rgba(244,63,94,0.2);">
+            <div style="font-size:10.5px;color:#fda4af;text-transform:uppercase;">Suspicious</div>
+            <div id="simResSuspicious" style="font-size:16px;font-weight:700;color:#fb7185;margin-top:2px;">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="simModalFooter" style="display:none;justify-content:flex-end;gap:10px;">
+        <button type="button" class="btn primary" id="simViewResultsBtn">View Results</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const barEl = overlay.querySelector('#simProgressBar');
+  const pctEl = overlay.querySelector('#simPctText');
+  const stepEl = overlay.querySelector('#simStepText');
+  const badgeEl = overlay.querySelector('#simLiveBadge');
+
+  const setProgress = (pct, msg) => {
+    barEl.style.width = `${pct}%`;
+    pctEl.textContent = `${pct}%`;
+    if (msg) stepEl.textContent = msg;
+  };
+
   resetPipeline();
-  setPipeline(1, 'Loading sample dataset…');
+  setPipeline(1, 'Generating real-time threat simulation…');
+
   try {
-    const res = await api.loadSample();
+    setProgress(15, 'Generating real-time threat telemetry & timestamps…');
+    const apiPromise = api.loadSample(scenario);
+
+    await new Promise((r) => setTimeout(r, 220));
+    setProgress(40, 'Streaming CSV log events & computing SHA-256 hash…');
     setPipeline(2, 'Validating records…');
-    await new Promise((r) => setTimeout(r, 200));
+
+    await new Promise((r) => setTimeout(r, 240));
+    setProgress(70, 'Running SOC detection rules (Brute Force, Takeover, Probe)…');
     setPipeline(3, 'Applying detection rules…');
-    await new Promise((r) => setTimeout(r, 200));
+
+    const res = await apiPromise;
+
+    setProgress(90, 'Persisting findings & evidence to SQLite…');
     setPipeline(4, 'Saving results…');
     await new Promise((r) => setTimeout(r, 200));
+
+    setProgress(100, 'Simulation complete! All events analyzed.');
+    badgeEl.style.color = '#34d399';
+    badgeEl.style.background = 'rgba(16,185,129,0.12)';
+    badgeEl.style.borderColor = 'rgba(16,185,129,0.35)';
+    badgeEl.innerHTML = '✓ Simulation Done';
+    pctEl.style.color = '#34d399';
+
+    overlay.querySelector('#simResTotal').textContent = res.stats?.total ?? 0;
+    overlay.querySelector('#simResValid').textContent = res.stats?.valid ?? 0;
+    overlay.querySelector('#simResSuspicious').textContent = res.stats?.suspicious ?? 0;
+    overlay.querySelector('#simResultsBox').style.display = 'block';
+    overlay.querySelector('#simModalFooter').style.display = 'flex';
+
     showRunStats(res.stats);
-    toast('success', 'Sample Loaded', `${res.stats.suspicious} suspicious events detected from ${res.stats.valid} records.`);
     state.currentRunId = null;
     await loadUploadHistory();
     await loadStats();
@@ -741,11 +829,14 @@ async function runSample() {
     await loadThreats();
     if (typeof window.populateReportRuns === 'function') window.populateReportRuns();
     setPipeline(5, 'Done.');
-    switchView('analyzer');
+
+    overlay.querySelector('#simViewResultsBtn').addEventListener('click', () => {
+      overlay.remove();
+      switchView('analyzer');
+    });
   } catch (e) {
-    toast('error', 'Sample Load Failed', e.message || 'Unable to load sample.');
-  } finally {
-    setLoader(false);
+    overlay.remove();
+    toast('error', 'Simulation Failed', e.message || 'Unable to run simulation.');
   }
 }
 

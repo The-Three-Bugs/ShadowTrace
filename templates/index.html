@@ -289,7 +289,7 @@
             </button>
             <button class="qa" id="qaSample">
               <div class="qa-icon violet"><i data-lucide="flask-conical"></i></div>
-              <div class="qa-text"><strong>Load Sample Dataset</strong><span>Demo data covering all 3 rules</span></div>
+              <div class="qa-text"><strong>Run Live Simulation</strong><span>Real-time AI-generated SOC attack stream</span></div>
               <i data-lucide="arrow-right" class="qa-arrow"></i>
             </button>
             <button class="qa" id="qaThreats">
@@ -328,8 +328,14 @@
             <button class="btn ghost" id="downloadTemplate">
               <i data-lucide="download"></i> Template
             </button>
+            <select id="simScenarioSelect" class="select" style="font-size:12px;padding:7px 28px 7px 10px;" title="Select Simulation Scenario">
+              <option value="mixed">Scenario: Mixed SOC Attack</option>
+              <option value="brute_force">Scenario: Brute Force Wave</option>
+              <option value="takeover">Scenario: Account Takeover</option>
+              <option value="ddos_probe">Scenario: Perimeter DDoS &amp; Probe</option>
+            </select>
             <button class="btn ghost" id="loadSampleBtn">
-              <i data-lucide="flask-conical"></i> Load Sample Dataset
+              <i data-lucide="cpu"></i> Run Live Simulation
             </button>
           </div>
 
