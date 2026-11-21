@@ -65,6 +65,7 @@
 
   let speedMultiplier = 1.35; // Default "Fast" speed
   let isSquadFormation = false;
+  let isPeeking = false;
   let isPaused = false;
   let isHidden = false;
   let stageEl = null;
@@ -271,6 +272,21 @@
       this.hoverPhase += dt * 3.5;
 
       if (!this.isDragging) {
+        if (isPeeking) {
+          this.el.classList.add('peeking');
+          const peekX = screenW * (0.28 + this.index * 0.22) - this.cfg.width / 2;
+          const peekY = screenH - 38;
+          this.x += (peekX - this.x) * 0.14;
+          this.y += (peekY - this.y) * 0.14;
+          this.vx = 0;
+          this.vy = 0;
+          this.rotY = 0;
+          this.el.style.transform = `translate3d(${this.x}px, ${this.y}px, 0) scale(1)`;
+          return;
+        } else {
+          this.el.classList.remove('peeking');
+        }
+
         // Squad formation logic vs autonomous roaming
         if (isSquadFormation) {
           const centerX = screenW / 2;
@@ -441,7 +457,6 @@
         this.perchTimer = 6 + Math.random() * 10;
       }
     }
-    }
   }
 
   // Continuous Video Controller
@@ -457,80 +472,9 @@
       if (v) v.play().catch(() => {});
     }
 
-    // 2. Topbar Continuous Team Badge
-    const topbarRight = document.querySelector('.topbar-right');
-    if (topbarRight && !document.getElementById('teamContinuousBadge')) {
-      const badge = document.createElement('div');
-      badge.className = 'team-continuous-badge';
-      badge.id = 'teamContinuousBadge';
-      badge.title = 'The Three Bugs — Click to assemble squad!';
-      badge.innerHTML = `
-        <div class="team-badge-video-wrap">
-          <video class="team-badge-video" autoplay loop muted playsinline src="/static/3Bugs.mp4"></video>
-        </div>
-        <div class="team-badge-info">
-          <span class="team-badge-name">The Three Bugs</span>
-          <span class="team-badge-status"><span class="team-dot-live"></span>Continuous Live</span>
-        </div>
-      `;
-      // Insert before refresh button or avatar
-      topbarRight.insertBefore(badge, topbarRight.firstChild);
-
-      badge.addEventListener('click', () => {
-        isSquadFormation = !isSquadFormation;
-        bugs.forEach(b => b.celebrate());
-        const toastFn = window.toast || function () {};
-        toastFn('info', 'The Three Bugs Squad', isSquadFormation ? 'Squad assembled in formation!' : 'Bugs roaming freely across UI.');
-      });
-
-      const bv = badge.querySelector('video');
-      if (bv) bv.play().catch(() => {});
-    }
-
-    // 3. Floating Hologram Card Showcase
-    if (!document.getElementById('teamHologramCard')) {
-      const card = document.createElement('div');
-      card.className = 'team-hologram-card';
-      card.id = 'teamHologramCard';
-      card.innerHTML = `
-        <div class="hologram-video-frame">
-          <video class="hologram-video" autoplay loop muted playsinline src="/static/3Bugs.mp4"></video>
-          <div class="hologram-scanline"></div>
-        </div>
-        <div class="hologram-info">
-          <div class="hologram-title">The Three Bugs <span class="hologram-tag">LIVE SOC</span></div>
-          <div class="hologram-sub">Continuous Team Animation & 3D Sentinels</div>
-        </div>
-        <div class="hologram-ctrls">
-          <button class="hologram-btn" id="holoSquadBtn" title="Assemble 3D Squad">
-            <i data-lucide="users" style="width:14px;height:14px;"></i>
-          </button>
-          <button class="hologram-btn" id="holoMinBtn" title="Minimize">
-            <i data-lucide="minus" style="width:14px;height:14px;"></i>
-          </button>
-        </div>
-      `;
-      document.body.appendChild(card);
-
-      const hv = card.querySelector('video');
-      if (hv) hv.play().catch(() => {});
-
-      const minBtn = card.querySelector('#holoMinBtn');
-      minBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        card.classList.toggle('minimized');
-      });
-
-      const squadBtn = card.querySelector('#holoSquadBtn');
-      squadBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        isSquadFormation = !isSquadFormation;
-        squadBtn.classList.toggle('active', isSquadFormation);
-        bugs.forEach(b => b.celebrate());
-      });
-
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
-    }
+    // 2. Topbar Continuous Team Badge - removed per user request
+    const existingBadge = document.getElementById('teamContinuousBadge');
+    if (existingBadge) existingBadge.remove();
   }
 
   // HUD Squad Controller
@@ -553,6 +497,13 @@
       </button>
       <button class="hud-btn" id="hudToggleBtn" title="Pause / Play Roaming">
         <i data-lucide="play" style="width:13px;height:13px;" id="hudPlayIcon"></i>
+      </button>
+      <button class="hud-btn" id="hudHideBugsBtn" title="Hide Bugs (Peek from bottom)">
+        <i data-lucide="eye-off" style="width:13px;height:13px;"></i>
+        <span id="hudHideBugsLabel">Hide</span>
+      </button>
+      <button class="hud-btn" id="hudMinimizeBtn" title="Minimize / Expand Strip">
+        <i data-lucide="chevron-right" style="width:14px;height:14px;" id="hudMinIcon"></i>
       </button>
     `;
     document.body.appendChild(hudEl);
@@ -592,9 +543,51 @@
       const icon = toggleBtn.querySelector('i');
       if (icon) {
         icon.setAttribute('data-lucide', isPaused ? 'pause' : 'play');
+        // Hide / Peek Bugs toggle
+    const hideBugsBtn = hudEl.querySelector('#hudHideBugsBtn');
+    const hideBugsLabel = hudEl.querySelector('#hudHideBugsLabel');
+    if (hideBugsBtn) {
+      hideBugsBtn.addEventListener('click', () => {
+        isPeeking = !isPeeking;
+        hideBugsBtn.classList.toggle('active', isPeeking);
+        if (hideBugsLabel) hideBugsLabel.textContent = isPeeking ? 'Show' : 'Hide';
+      });
+    }
+
+    // Minimize / Expand HUD strip to the right
+    const minBtn = hudEl.querySelector('#hudMinimizeBtn');
+    if (minBtn) {
+      minBtn.addEventListener('click', () => {
+        const isMin = hudEl.classList.toggle('minimized');
+        minBtn.innerHTML = `<i data-lucide="${isMin ? 'chevron-left' : 'chevron-right'}" style="width:14px;height:14px;"></i>`;
         if (window.lucide && lucide.createIcons) lucide.createIcons();
+      });
+    }
+
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
       }
     });
+
+    // Hide / Peek Bugs toggle
+    const hideBugsBtn = hudEl.querySelector('#hudHideBugsBtn');
+    const hideBugsLabel = hudEl.querySelector('#hudHideBugsLabel');
+    if (hideBugsBtn) {
+      hideBugsBtn.addEventListener('click', () => {
+        isPeeking = !isPeeking;
+        hideBugsBtn.classList.toggle('active', isPeeking);
+        if (hideBugsLabel) hideBugsLabel.textContent = isPeeking ? 'Show' : 'Hide';
+      });
+    }
+
+    // Minimize / Expand HUD strip to the right
+    const minBtn = hudEl.querySelector('#hudMinimizeBtn');
+    if (minBtn) {
+      minBtn.addEventListener('click', () => {
+        const isMin = hudEl.classList.toggle('minimized');
+        minBtn.innerHTML = `<i data-lucide="${isMin ? 'chevron-left' : 'chevron-right'}" style="width:14px;height:14px;"></i>`;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      });
+    }
 
     if (window.lucide && lucide.createIcons) lucide.createIcons();
   }

@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/three_bugs.css') }}" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cyber_neu_patch.css') }}" />
 <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='logo.jpeg') }}" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -99,9 +100,7 @@
         <span class="nav-glow"></span>
       </button>
 
-      <div class="nav-label" style="margin-top:22px;">System</div>
-      
-      <div class="nav-label" style="margin-top:16px;">Reports & Audit</div>
+      <div class="nav-label" style="margin-top:22px;">Reports</div>
       <button class="nav-item" data-view="reports">
         <i data-lucide="file-text"></i><span>Reports & Export</span>
         <span class="nav-glow"></span>
@@ -111,6 +110,7 @@
         <span class="nav-glow"></span>
       </button>
 
+      <div class="nav-label" style="margin-top:22px;">System</div>
       <button class="nav-item" data-view="settings">
         <i data-lucide="settings-2"></i><span>Settings</span>
         <span class="nav-glow"></span>
@@ -122,7 +122,7 @@
         <span class="status-dot"></span>
         <span id="engineStatus">Engine Idle</span>
       </div>
-      <div class="version">v0.1 · The Three Bugs</div>
+      <div class="version">v0.2 · The Three Bugs</div>
     </div>
   </aside>
 
@@ -159,9 +159,6 @@
           <button class="icon-btn auth-logout-btn" id="topbarLogoutBtn" title="Log Out">
             <i data-lucide="log-out"></i>
           </button>
-        </div>
-        <div class="avatar" style="overflow: hidden; padding: 0; border: 1.5px solid rgba(34,211,238,0.5); box-shadow: 0 0 12px rgba(34,211,238,0.35);" title="The Three Bugs">
-          <img src="{{ url_for('static', filename='logo.jpeg') }}" alt="The Three Bugs Logo" style="width: 100%; height: 100%; object-fit: cover;" />
         </div>
       </div>
     </header>
@@ -292,7 +289,7 @@
             </button>
             <button class="qa" id="qaSample">
               <div class="qa-icon violet"><i data-lucide="flask-conical"></i></div>
-              <div class="qa-text"><strong>Load Sample Dataset</strong><span>Demo data covering all 3 rules</span></div>
+              <div class="qa-text"><strong>Run Live Simulation</strong><span>Real-time AI-generated SOC attack stream</span></div>
               <i data-lucide="arrow-right" class="qa-arrow"></i>
             </button>
             <button class="qa" id="qaThreats">
@@ -325,11 +322,20 @@
           </label>
 
           <div class="uploader-actions">
+            <button class="btn primary" id="uploadCsvTriggerBtn">
+              <i data-lucide="upload"></i> Upload CSV File
+            </button>
             <button class="btn ghost" id="downloadTemplate">
               <i data-lucide="download"></i> Template
             </button>
-            <button class="btn primary" id="loadSampleBtn">
-              <i data-lucide="flask-conical"></i> Load Sample Dataset
+            <select id="simScenarioSelect" class="select" style="font-size:12px;padding:7px 28px 7px 10px;" title="Select Simulation Scenario">
+              <option value="mixed">Scenario: Mixed SOC Attack</option>
+              <option value="brute_force">Scenario: Brute Force Wave</option>
+              <option value="takeover">Scenario: Account Takeover</option>
+              <option value="ddos_probe">Scenario: Perimeter DDoS &amp; Probe</option>
+            </select>
+            <button class="btn ghost" id="loadSampleBtn">
+              <i data-lucide="cpu"></i> Run Live Simulation
             </button>
           </div>
 
@@ -341,20 +347,56 @@
           </div>
         </div>
 
-        <div class="card">
+        <!-- File Upload History Grid -->
+        <div class="card upload-history-card">
           <div class="card-head">
             <div>
-              <h3>Processing Status</h3>
-              <p class="card-sub">Live pipeline feedback</p>
+              <h3><i data-lucide="history" style="width: 16px; height: 16px; display: inline-block; vertical-align: -2px; color: var(--cyan); margin-right: 6px;"></i>File Upload History</h3>
+              <p class="card-sub">Select a previous CSV file from the grid to reload its analysis</p>
+            </div>
+            <div>
+              <button class="btn primary sm" id="loadPreviousFileBtn" disabled>
+                <i data-lucide="folder-open"></i> Load Previous File
+              </button>
             </div>
           </div>
-          <div class="pipeline" id="pipeline">
+
+          <div class="history-grid-container table-scroll" style="max-height: 280px; overflow-y: auto;">
+            <table class="data-table history-grid-table" id="uploadHistoryTable">
+              <thead>
+                <tr>
+                  <th style="width: 48px;">Select</th>
+                  <th>CSV File Name</th>
+                  <th>Uploaded On</th>
+                  <th>Records</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="uploadHistoryBody">
+                <tr class="empty-row"><td colspan="5">Loading file history…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="history-selected-bar" id="historySelectedBar" style="display: none; margin-top: 12px; padding: 10px 14px; background: rgba(34,211,238,0.06); border: 1px solid rgba(34,211,238,0.25); border-radius: 8px; font-size: 12px; color: var(--txt-1); align-items: center; justify-content: space-between;">
+            <div>
+              <span style="color: var(--txt-3);">Selected:</span>
+              <strong id="historySelectedName" style="color: var(--cyan); margin-left: 6px;">None</strong>
+              <span id="historySelectedMeta" style="color: var(--txt-2); margin-left: 8px;"></span>
+            </div>
+            <button class="btn ghost sm" id="clearHistorySelectBtn" style="font-size: 11px; padding: 4px 10px; color: var(--txt-2);">
+              <i data-lucide="x"></i> Deselect
+            </button>
+          </div>
+
+          <!-- Hidden pipeline hooks for status animation -->
+          <div class="pipeline" id="pipeline" style="display:none;">
             <div class="pipe-step" data-step="1"><span class="dot"></span><span>Upload received</span></div>
             <div class="pipe-step" data-step="2"><span class="dot"></span><span>CSV parsed & validated</span></div>
             <div class="pipe-step" data-step="3"><span class="dot"></span><span>Detection rules applied</span></div>
             <div class="pipe-step" data-step="4"><span class="dot"></span><span>Results persisted to SQLite</span></div>
           </div>
-          <div class="pipeline-note" id="pipelineNote">Awaiting input…</div>
+          <div class="pipeline-note" id="pipelineNote" style="display:none;">Awaiting input…</div>
         </div>
       </div>
 
@@ -371,7 +413,11 @@
             </div>
             <select id="logSeverity" class="select">
               <option value="All">All Severities</option>
-              <option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+              <option value="Normal">Normal</option>
             </select>
           </div>
         </div>
@@ -379,7 +425,7 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Timestamp</th><th>Source IP</th><th>User</th><th>Event Type</th>
+                <th>Timestamp</th><th>Source IP</th><th>User</th><th>Log Source</th>
                 <th>Status</th><th>Severity</th><th>Detection Reason</th>
               </tr>
             </thead>
@@ -466,25 +512,23 @@
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
-          <div style="background: rgba(255,255,255,0.02); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
-            <div style="font-size: 12px; color: #8a99ad; margin-bottom: 4px;">DESCRIPTION</div>
-            <div id="detInvDesc" style="font-size: 14px; color: #f1f5ff;">No description provided.</div>
+          <div class="neu-inset-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+            <span class="modal-label" style="margin:0;">Description</span>
+            <div id="detInvDesc" style="font-size: 14px; color: var(--txt-0);">No description provided.</div>
           </div>
-          <div style="background: rgba(255,255,255,0.02); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 12px; color: #8a99ad; margin-bottom: 4px;">TIMESTAMPS</div>
-              <div style="font-size: 13px; color: #c3cbe4;">Created: <span id="detInvCreated">-</span></div>
-              <div style="font-size: 13px; color: #c3cbe4; margin-top: 4px;">Updated: <span id="detInvUpdated">-</span></div>
-            </div>
+          <div class="neu-inset-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+            <span class="modal-label" style="margin:0;">Timestamps</span>
+            <div style="font-size: 13px; color: var(--txt-1);">Created: <span id="detInvCreated">-</span></div>
+            <div style="font-size: 13px; color: var(--txt-1); margin-top: 4px;">Updated: <span id="detInvUpdated">-</span></div>
           </div>
         </div>
 
         <!-- Evidence Section -->
-        <div style="margin-top: 24px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+        <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <div>
-              <h4 style="font-size: 16px; color: #f1f5ff; font-weight: 600;">Associated Evidence & SHA-256 Verification</h4>
-              <p style="font-size: 13px; color: #8a99ad;">Upload CSV logs and verify cryptographic file integrity.</p>
+              <h4 style="font-size: 15px; color: var(--txt-0); font-weight: 700;">Associated Evidence & SHA-256 Verification</h4>
+              <p style="font-size: 12.5px; color: var(--txt-2);">Upload CSV logs and verify cryptographic file integrity.</p>
             </div>
             <div>
               <input type="file" id="evidenceFileInput" accept=".csv" style="display: none;" />
@@ -517,7 +561,7 @@
 
     <!-- Create Investigation Modal -->
     <div class="loader-overlay" id="createInvModal" style="background: rgba(5,8,18,0.85); backdrop-filter: blur(6px);">
-      <div style="background: #0f172a; border: 1px solid rgba(34,211,238,0.3); border-radius: 12px; padding: 28px; width: 440px; max-width: 90%; box-shadow: 0 0 30px rgba(34,211,238,0.2);">
+      <div style="background: linear-gradient(160deg,rgba(14,20,38,0.98),rgba(8,12,22,0.98)); border: 1px solid rgba(34,211,238,0.3); border-radius: 18px; padding: 28px; width: 440px; max-width: 90%; box-shadow: 0 0 40px rgba(34,211,238,0.15), 14px 14px 32px rgba(0,0,0,0.8), inset 0 1px 0 rgba(34,211,238,0.1); position: relative; overflow: hidden;">
         <h3 style="color: #f1f5ff; margin-bottom: 16px; font-size: 18px;">Create New Investigation</h3>
         <div style="margin-bottom: 14px;">
           <label style="display: block; font-size: 12px; color: #8a99ad; margin-bottom: 6px;">Investigation Title *</label>
@@ -558,7 +602,11 @@
             </div>
             <select id="threatSeverity" class="select">
               <option value="All">All Severities</option>
-              <option>Critical</option><option>High</option><option>Medium</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+              <option value="Normal">Normal</option>
             </select>
           </div>
         </div>
@@ -570,15 +618,22 @@
         </div>
 
         <div class="table-scroll">
-          <table class="data-table">
+          <table class="data-table" id="threatsTable">
             <thead>
               <tr>
-                <th>ID</th><th>Timestamp</th><th>Source IP</th><th>Rule Triggered</th>
-                <th>Severity</th><th>Evidence</th><th>Status</th>
+                <th>ID</th>
+                <th>Timestamp</th>
+                <th>Source IP</th>
+                <th>Rule ID</th>
+                <th>Attack Type</th>
+                <th>Rule Name</th>
+                <th>Severity</th>
+                <th>Evidence / Description</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody id="threatsBody">
-              <tr class="empty-row"><td colspan="7">No threats detected yet.</td></tr>
+              <tr class="empty-row"><td colspan="9">No threats detected yet.</td></tr>
             </tbody>
           </table>
         </div>
@@ -588,46 +643,52 @@
     <!-- ================= REPORTS & EXPORT (Member 4) ================= -->
     <section class="view" id="view-reports">
       <div class="card" style="margin-bottom:20px;">
-        <div class="card-header">
-          <i data-lucide="file-text"></i>
-          <h2>Investigation Reports &amp; Export</h2>
+        <div class="card-head">
+          <div>
+            <h3>Investigation Reports &amp; Export</h3>
+            <p class="card-sub">Preview, generate PDF, or export CSV data for any analysis run</p>
+          </div>
+          <div class="card-chip cyan">Reports</div>
         </div>
-        <p style="color:var(--text-muted);margin-bottom:18px;">Enter a Run ID to preview, generate a PDF report, or export CSV data for any analysis run.</p>
 
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
-          <label style="color:var(--text-secondary);font-size:13px;">Run ID:</label>
-          <input type="number" id="reportRunId" value="1" min="1"
-            style="width:90px;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:14px;">
-          <button class="btn primary" onclick="previewReport()">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px;">
+          <span class="modal-label" style="margin:0;white-space:nowrap;">Run ID</span>
+          <select id="reportRunId" class="select" style="min-width: 220px; font-family: 'JetBrains Mono', monospace;">
+            <option value="1">Run #1 (Default)</option>
+          </select>
+          <button class="btn ghost" onclick="previewReport()">
             <i data-lucide="eye"></i> Preview
           </button>
-          <button class="btn" style="background:#0284c7;color:#fff;" onclick="verifyIntegrity()">
-            <i data-lucide="shield-check"></i> Verify SHA-256 Hash
+          <button class="btn ghost" onclick="verifyIntegrity()" style="color:#34d399;border-color:rgba(16,185,129,0.35);background:rgba(16,185,129,0.08);">
+            <i data-lucide="shield-check"></i> Verify SHA-256
           </button>
-          <button class="btn" style="background:var(--accent-red,#dc2626);color:#fff;" onclick="generatePDF()">
+          <button class="btn ghost" onclick="generatePDF()" style="color:#fb7185;border-color:rgba(244,63,94,0.35);background:rgba(244,63,94,0.08);">
             <i data-lucide="download"></i> Download PDF Report
           </button>
         </div>
 
         <!-- Preview Panel -->
-        <div id="reportPreviewPanel" style="display:none;border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:20px;background:var(--bg-card-2);">
-          <h3 style="margin:0 0 14px;font-size:15px;color:var(--accent-cyan);">Report Preview</h3>
-          <table style="width:100%;border-collapse:collapse;font-size:13px;" id="reportPreviewTable"></table>
+        <div id="reportPreviewPanel" style="display:none;margin-bottom:22px;">
+          <h3 style="margin:0 0 14px;">Report Preview</h3>
+          <table style="width:100%;border-collapse:collapse;" id="reportPreviewTable"></table>
         </div>
 
         <!-- CSV Exports -->
-        <div class="card-header" style="margin-bottom:12px;">
-          <i data-lucide="download-cloud"></i>
-          <h3 style="font-size:14px;margin:0;">CSV Exports</h3>
+        <div class="card-head" style="border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:16px;">
+          <div>
+            <h3>CSV Exports</h3>
+            <p class="card-sub">Download raw data in spreadsheet format</p>
+          </div>
+          <i data-lucide="download-cloud" class="card-head-icon"></i>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn" onclick="exportCSV('events')">
+          <button class="btn ghost" onclick="exportCSV('events')">
             <i data-lucide="table"></i> Export Events CSV
           </button>
-          <button class="btn" onclick="exportCSV('findings')">
+          <button class="btn ghost" onclick="exportCSV('findings')">
             <i data-lucide="shield-alert"></i> Export Findings CSV
           </button>
-          <button class="btn" onclick="exportCSV('evidence')">
+          <button class="btn ghost" onclick="exportCSV('evidence')">
             <i data-lucide="file-box"></i> Export Evidence CSV
           </button>
         </div>
@@ -637,16 +698,17 @@
     <!-- ================= AUDIT TRAIL (Member 4) ================= -->
     <section class="view" id="view-audit">
       <div class="card">
-        <div class="card-header">
-          <i data-lucide="clock"></i>
-          <h2>Audit Trail &amp; Activity History</h2>
+        <div class="card-head">
+          <div>
+            <h3>Audit Trail &amp; Activity History</h3>
+            <p class="card-sub">Chronological log of all important actions performed in ShadowTrace</p>
+          </div>
+          <div class="card-chip violet">Audit</div>
         </div>
-        <p style="color:var(--text-muted);margin-bottom:18px;">Chronological log of all important actions performed in ShadowTrace.</p>
 
         <!-- Filters -->
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
-          <select id="auditActionFilter"
-            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
+        <div class="filters" style="margin-bottom:18px;flex-wrap:wrap;">
+          <select id="auditActionFilter" class="select">
             <option value="">All Action Types</option>
             <option value="CSV_PROCESSED">CSV Processed</option>
             <option value="REPORT_GENERATED">Report Generated</option>
@@ -654,28 +716,32 @@
             <option value="EXPORT_FINDINGS">Export Findings</option>
             <option value="EXPORT_EVIDENCE">Export Evidence</option>
           </select>
-          <input type="date" id="auditDateFrom"
-            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
-          <input type="date" id="auditDateTo"
-            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-2);color:var(--text-primary);font-size:13px;">
+          <div class="date-filter-wrap">
+            <label for="auditDateFrom" style="color: #22d3ee;" title="Filter Start Date"><i data-lucide="calendar" style="width:13px;height:13px;margin-right:4px;"></i>From:</label>
+            <input type="date" id="auditDateFrom" title="Start Date (From)" aria-label="From Date">
+          </div>
+          <div class="date-filter-wrap">
+            <label for="auditDateTo" style="color: #a78bfa;" title="Filter End Date"><i data-lucide="calendar" style="width:13px;height:13px;margin-right:4px;"></i>To:</label>
+            <input type="date" id="auditDateTo" title="End Date (To)" aria-label="To Date">
+          </div>
           <button class="btn primary" onclick="loadAuditTrail()">
             <i data-lucide="filter"></i> Filter
           </button>
-          <button class="btn" onclick="document.getElementById('auditActionFilter').value='';document.getElementById('auditDateFrom').value='';document.getElementById('auditDateTo').value='';loadAuditTrail()">
-            Reset
+          <button class="btn ghost" onclick="document.getElementById('auditActionFilter').value='';document.getElementById('auditDateFrom').value='';document.getElementById('auditDateTo').value='';loadAuditTrail()">
+            <i data-lucide="rotate-ccw"></i> Reset
           </button>
         </div>
 
         <!-- Activity Table -->
-        <div class="table-wrap">
-          <table class="log-table">
+        <div class="table-scroll">
+          <table class="data-table">
             <thead>
               <tr>
                 <th>#</th><th>Timestamp</th><th>Action</th><th>Description</th><th>Record Type</th><th>Record ID</th>
               </tr>
             </thead>
             <tbody id="auditTableBody">
-              <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">Click Filter to load activity history.</td></tr>
+              <tr class="empty-row"><td colspan="6">Click Filter to load activity history.</td></tr>
             </tbody>
           </table>
         </div>
@@ -684,9 +750,25 @@
 
     <!-- ================= SETTINGS ================= -->
     <section class="view" id="view-settings">
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px;">
-        <!-- User Account & Security Settings Card -->
-        <div class="card neu-card">
+      <!-- Settings Sub-Navigation Tabs -->
+      <div class="settings-tabs" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px;">
+        <button type="button" class="btn primary settings-tab-btn active" data-settings-tab="security">
+          <i data-lucide="key-round"></i> Account Security
+        </button>
+        <button type="button" class="btn ghost settings-tab-btn" data-settings-tab="users">
+          <i data-lucide="users"></i> User &amp; Role Management
+        </button>
+        <button type="button" class="btn ghost settings-tab-btn" data-settings-tab="rbac">
+          <i data-lucide="shield"></i> RBAC Permissions
+        </button>
+        <button type="button" class="btn ghost settings-tab-btn" data-settings-tab="system">
+          <i data-lucide="cpu"></i> System &amp; Operations
+        </button>
+      </div>
+
+      <!-- Tab 1: Account Security -->
+      <div class="settings-tab-panel active" id="settings-tab-security">
+        <div class="card neu-card" style="max-width: 640px;">
           <div class="card-head">
             <div class="flex-gap">
               <div class="neu-icon-badge cyan"><i data-lucide="key-round"></i></div>
@@ -702,6 +784,21 @@
               <span class="modal-label" style="margin: 0;">Active User</span>
               <span class="modal-val font-mono" id="settingsUsername">Not Logged In</span>
             </div>
+
+            <form id="changeUsernameForm" autocomplete="off" onsubmit="return false;" style="margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border);">
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label class="modal-label" for="newUsernameInput">Change Username (min 3 chars)</label>
+                <div style="display: flex; gap: 10px;">
+                  <div class="neu-input-wrap" style="flex: 1;">
+                    <i data-lucide="user-pen" class="input-icon"></i>
+                    <input type="text" id="newUsernameInput" class="neu-input" placeholder="Enter new username" minlength="3" required />
+                  </div>
+                  <button type="submit" class="btn secondary" id="changeUsernameBtn" style="white-space: nowrap;">
+                    <i data-lucide="save"></i> Update
+                  </button>
+                </div>
+              </div>
+            </form>
 
             <form id="changePasswordForm" autocomplete="off" onsubmit="return false;">
               <div class="form-group" style="margin-bottom: 12px;">
@@ -728,17 +825,48 @@
                 </div>
               </div>
 
-              <div style="display: flex; gap: 10px; justify-content: flex-end;">
+              <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn ghost" id="settingsForgotPwdBtn" style="font-size:12px;color:var(--cyan);">
+                  <i data-lucide="help-circle"></i> Forgot Password?
+                </button>
                 <button type="submit" class="btn primary" id="changePasswordBtn">
                   <i data-lucide="check"></i> Update Password
                 </button>
               </div>
             </form>
+
+            <!-- Google Authenticator MFA Setup -->
+            <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+                <div>
+                  <div style="font-weight:700;font-size:13.5px;color:var(--txt-0);">Multi-Factor Authentication (MFA)</div>
+                  <div style="font-size:11.5px;color:var(--txt-2);">Optional for login; supports Google Auth &amp; Email OTP</div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <button type="button" class="btn ghost" id="toggleMfaBtn" style="font-size:12px;">
+                    <i data-lucide="shield"></i> <span id="toggleMfaLabel">Enable MFA</span>
+                  </button>
+                  <button type="button" class="btn secondary" id="setupMfaBtn" style="font-size:12px;">
+                    <i data-lucide="qr-code"></i> Connect Google Auth
+                  </button>
+                </div>
+              </div>
+              <div id="mfaSetupBox" style="display:none;background:rgba(8,12,24,0.75);border:1px solid rgba(34,211,238,0.3);border-radius:12px;padding:14px;margin-top:10px;">
+                <div style="font-size:12px;color:var(--txt-1);margin-bottom:8px;">1. Scan or enter this secret key in <strong>Google Authenticator</strong>:</div>
+                <div id="mfaSecretText" class="mono" style="font-size:13px;color:#22d3ee;background:rgba(34,211,238,0.08);padding:8px 10px;border-radius:8px;word-break:break-all;margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" id="mfaVerifyCodeInput" autocomplete="off" class="neu-input" placeholder="Enter 6-digit code" maxlength="6" style="flex:1;background:rgba(15,23,42,0.8);border:1px solid var(--border);border-radius:8px;padding:8px 12px;" />
+                  <button type="button" class="btn primary" id="verifyMfaBtn">Verify &amp; Enable</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
 
-        <!-- System & Animation Card -->
-        <div class="card coming-soon">
+      <!-- Tab 4: System & Operations -->
+      <div class="settings-tab-panel" id="settings-tab-system" style="display:none;">
+        <div class="card coming-soon" style="max-width: 680px;">
           <div class="cs-glow"></div>
           <i data-lucide="shield-check"></i>
           <h2>The Three Bugs Operations</h2>
@@ -750,6 +878,145 @@
             <button class="btn secondary" id="settingsLogoutBtn">
               <i data-lucide="log-out"></i> Log Out
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: RBAC Permissions Matrix -->
+      <div class="settings-tab-panel" id="settings-tab-rbac" style="display:none;">
+        <!-- RBAC Permissions Matrix Card -->
+        <div class="card neu-card">
+          <div class="card-head">
+            <div class="flex-gap">
+              <div class="neu-icon-badge violet"><i data-lucide="shield"></i></div>
+              <div>
+                <h3 class="card-title">SOC Role Permissions Matrix</h3>
+                <p class="card-sub">Role-based access control across ShadowTrace SOC modules</p>
+              </div>
+            </div>
+            <span class="card-chip violet">RBAC Policy</span>
+          </div>
+          <div class="table-scroll" style="max-height: 360px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>SOC Capability</th>
+                  <th style="text-align:center;">Admin</th>
+                  <th style="text-align:center;">Analyst</th>
+                  <th style="text-align:center;">Viewer</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>User &amp; Role Management</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#f87171;">Denied</td>
+                  <td style="text-align:center;color:#f87171;">Denied</td>
+                </tr>
+                <tr>
+                  <td>Upload &amp; Analyze Logs</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#f87171;">Read-Only</td>
+                </tr>
+                <tr>
+                  <td>Create &amp; Manage Investigations</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#fbbf24;">View Only</td>
+                </tr>
+                <tr>
+                  <td>Triage Threats &amp; Add Notes</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#fbbf24;">View Only</td>
+                </tr>
+                <tr>
+                  <td>Generate PDF &amp; CSV Reports</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;">Allowed</td>
+                </tr>
+                <tr>
+                  <td>Audit Trail &amp; Telemetry</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;font-weight:700;">Full</td>
+                  <td style="text-align:center;color:#34d399;">Allowed</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: User & Role Management (Admin Only) -->
+      <div class="settings-tab-panel" id="settings-tab-users" style="display:none;">
+        <div class="card neu-card" id="rbacUserMgmtCard">
+          <div class="card-head">
+            <div class="flex-gap">
+              <div class="neu-icon-badge cyan"><i data-lucide="users"></i></div>
+              <div>
+                <h3 class="card-title">User &amp; Role Management</h3>
+                <p class="card-sub">Provision SOC analysts, assign roles, and revoke access</p>
+              </div>
+            </div>
+            <span class="card-chip cyan">Admin Only</span>
+          </div>
+
+          <div id="rbacAdminLockedNotice" style="display:none; padding: 24px; text-align: center; border-radius: 12px; background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.25); color: #fda4af;">
+            <i data-lucide="lock" style="width:28px;height:28px;margin-bottom:8px;color:#fb7185;"></i>
+            <div style="font-weight:600;margin-bottom:4px;">SOC Admin Privileges Required</div>
+            <div style="font-size:12.5px;color:var(--txt-2);">Only users with the <strong>Admin</strong> role can create, modify, or delete SOC accounts.</div>
+          </div>
+
+          <div id="rbacAdminControls">
+            <form id="createUserForm" onsubmit="return false;" style="display: grid; grid-template-columns: 1fr 1fr 1fr 120px auto; gap: 10px; align-items: end; margin-bottom: 18px;">
+              <div>
+                <label class="modal-label" for="newSocUsername">Username</label>
+                <div class="neu-input-wrap">
+                  <input type="text" id="newSocUsername" class="neu-input" placeholder="e.g. jdoe" minlength="3" required />
+                </div>
+              </div>
+              <div>
+                <label class="modal-label" for="newSocEmail">Email (for OTP)</label>
+                <div class="neu-input-wrap">
+                  <input type="email" id="newSocEmail" class="neu-input" placeholder="user@org.com" />
+                </div>
+              </div>
+              <div>
+                <label class="modal-label" for="newSocPassword">Password</label>
+                <div class="neu-input-wrap">
+                  <input type="password" id="newSocPassword" class="neu-input" placeholder="Min 8 chars" minlength="8" required />
+                </div>
+              </div>
+              <div>
+                <label class="modal-label" for="newSocRole">Role</label>
+                <select id="newSocRole" class="select" style="width:100%;">
+                  <option value="Analyst">Analyst</option>
+                  <option value="Viewer">Viewer</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+              <button type="submit" class="btn primary" id="createSocUserBtn" style="height:40px;">
+                <i data-lucide="user-plus"></i> Add
+              </button>
+            </form>
+
+            <div class="table-scroll" style="max-height: 260px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th style="text-align:right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="rbacUsersBody">
+                  <tr class="empty-row"><td colspan="4">Loading users…</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -823,6 +1090,34 @@
           <input type="text" id="modalNoteInput" class="input" placeholder="Add investigation note…" style="flex:1;" />
           <button class="btn primary sm" id="modalAddNoteBtn">Add Note</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SYSTEM CYBER NOTIFICATION / MODAL DIALOG ================= -->
+<div class="modal-overlay" id="cyberDialogOverlay" style="z-index: 10005;">
+  <div class="modal-box" id="cyberDialogBox" style="max-width: 540px; border: 1.5px solid rgba(34,211,238,0.4); box-shadow: 0 0 35px rgba(34,211,238,0.2), 0 20px 50px rgba(0,0,0,0.85); background: linear-gradient(165deg, rgba(14,20,38,0.98), rgba(8,12,24,0.98));">
+    <div class="modal-head" style="border-bottom: 1px solid rgba(120,145,200,0.15); padding-bottom: 12px; margin-bottom: 16px;">
+      <div style="display:flex; align-items:center; gap: 10px;">
+        <div id="cyberDialogIconWrap" style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(34,211,238,0.12); color: #22d3ee; border: 1px solid rgba(34,211,238,0.3);">
+          <i data-lucide="shield-check" id="cyberDialogIcon" style="width: 18px; height: 18px;"></i>
+        </div>
+        <div>
+          <h3 id="cyberDialogTitle" style="font-size: 16px; font-weight: 700; color: #fff; margin: 0;">System Notice</h3>
+          <p class="card-sub" id="cyberDialogSub" style="margin: 0; font-size: 11px;">The Three Bugs SOC Intelligence</p>
+        </div>
+      </div>
+      <button class="icon-btn" id="cyberDialogCloseBtn" onclick="closeCyberDialog()"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body" style="padding-top: 4px;">
+      <div id="cyberDialogBody" style="font-size: 13.5px; color: var(--txt-1); line-height: 1.6; margin-bottom: 20px;">
+        <!-- Dynamic Content injected here -->
+      </div>
+      <div style="display:flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(120,145,200,0.1); padding-top: 14px;">
+        <button class="btn primary sm" id="cyberDialogOkBtn" onclick="closeCyberDialog()" style="padding: 8px 20px; font-weight: 600;">
+          Acknowledge
+        </button>
       </div>
     </div>
   </div>
@@ -906,26 +1201,10 @@
           <span class="neu-btn-text">Authenticate & Enter</span>
           <i data-lucide="arrow-right" class="neu-btn-icon"></i>
         </button>
-      </form>
-
-      <!-- Demo credential hints for review -->
-      <div class="neu-demo-hints">
-        <div class="neu-hint-label">Pre-configured Role Credentials:</div>
-        <div class="neu-chips-row">
-          <button type="button" class="neu-cred-chip" data-user="admin" data-pass="AdminSecret123!" title="Click to autofill Admin">
-            <span class="chip-role">Administrator</span>
-            <span class="chip-user">admin</span>
-          </button>
-          <button type="button" class="neu-cred-chip" data-user="analyst" data-pass="AnalystPass123!" title="Click to autofill Analyst">
-            <span class="chip-role">Analyst</span>
-            <span class="chip-user">analyst</span>
-          </button>
-          <button type="button" class="neu-cred-chip" data-user="viewer" data-pass="ViewerPass123!" title="Click to autofill Viewer">
-            <span class="chip-role">Viewer</span>
-            <span class="chip-user">viewer</span>
-          </button>
+        <div style="text-align:center;margin-top:12px;">
+          <button type="button" id="loginForgotPwdBtn" style="background:none;border:none;color:var(--cyan);font-size:12px;text-decoration:underline;cursor:pointer;">Forgot Password? Reset via Google Auth / Email OTP</button>
         </div>
-      </div>
+      </form>
     </div>
   </div>
 </div>
@@ -947,9 +1226,87 @@
 
 <!-- Member 4 — Reports, Export & Audit Trail JS -->
 <script>
-function getRunId() {
-  return parseInt(document.getElementById('reportRunId').value) || 1;
+function showCyberDialog(title, contentHtml, type = 'info') {
+  const overlay = document.getElementById('cyberDialogOverlay');
+  const titleEl = document.getElementById('cyberDialogTitle');
+  const bodyEl = document.getElementById('cyberDialogBody');
+  const iconWrap = document.getElementById('cyberDialogIconWrap');
+  const icon = document.getElementById('cyberDialogIcon');
+  
+  if (!overlay || !titleEl || !bodyEl) return;
+  
+  titleEl.textContent = title;
+  bodyEl.innerHTML = contentHtml;
+  
+  // Color code based on type
+  if (type === 'success') {
+    iconWrap.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+    iconWrap.style.background = 'rgba(16, 185, 129, 0.15)';
+    iconWrap.style.color = '#10b981';
+    icon.setAttribute('data-lucide', 'shield-check');
+  } else if (type === 'warning') {
+    iconWrap.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+    iconWrap.style.background = 'rgba(245, 158, 11, 0.15)';
+    iconWrap.style.color = '#f59e0b';
+    icon.setAttribute('data-lucide', 'alert-triangle');
+  } else if (type === 'error') {
+    iconWrap.style.borderColor = 'rgba(244, 63, 94, 0.5)';
+    iconWrap.style.background = 'rgba(244, 63, 94, 0.15)';
+    iconWrap.style.color = '#f43f5e';
+    icon.setAttribute('data-lucide', 'shield-alert');
+  } else {
+    iconWrap.style.borderColor = 'rgba(34, 211, 238, 0.5)';
+    iconWrap.style.background = 'rgba(34, 211, 238, 0.15)';
+    iconWrap.style.color = '#22d3ee';
+    icon.setAttribute('data-lucide', 'info');
+  }
+  
+  overlay.classList.add('active');
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
 }
+
+function closeCyberDialog() {
+  const overlay = document.getElementById('cyberDialogOverlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('cyberDialogOverlay');
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeCyberDialog();
+    });
+  }
+});
+
+function getRunId() {
+  const el = document.getElementById('reportRunId');
+  return el ? parseInt(el.value) || 1 : 1;
+}
+
+async function populateReportRuns() {
+  const select = document.getElementById('reportRunId');
+  if (!select) return;
+  try {
+    const res = await fetch('/api/runs');
+    const json = await res.json();
+    if (json.ok && json.data && json.data.length > 0) {
+      select.innerHTML = json.data.map(r => `
+        <option value="${r.id}">Run #${r.id} · ${r.filename} (${r.status})</option>
+      `).join('');
+    } else {
+      select.innerHTML = `<option value="0">No runs available (Load dataset first)</option>`;
+    }
+  } catch(e) {
+    console.warn('Could not populate runs:', e);
+  }
+}
+
+window.populateReportRuns = populateReportRuns;
+
+document.addEventListener('DOMContentLoaded', () => {
+  populateReportRuns();
+});
 
 async function previewReport() {
   const id = getRunId();
@@ -958,7 +1315,10 @@ async function previewReport() {
   try {
     const res = await fetch(`/api/investigations/${id}/report`);
     const json = await res.json();
-    if (!json.ok) { alert('Error: ' + json.error); return; }
+    if (!json.ok) {
+      showCyberDialog('Preview Generation Error', `<p style="color:#f87171;">Failed to load report preview: ${escapeHtml(json.error || 'Unknown error')}</p>`, 'error');
+      return;
+    }
     const d = json.data;
     const rows = [
       ['Investigation ID', d.investigation_id],
@@ -981,7 +1341,9 @@ async function previewReport() {
       </tr>`
     ).join('');
     panel.style.display = 'block';
-  } catch(e) { alert('Failed to fetch preview: ' + e); }
+  } catch(e) {
+    showCyberDialog('Preview Failed', `<p style="color:#f87171;">Failed to fetch report preview: ${escapeHtml(e.message || e)}</p>`, 'error');
+  }
 }
 
 async function verifyIntegrity() {
@@ -990,13 +1352,48 @@ async function verifyIntegrity() {
     const res = await fetch(`/api/investigations/${id}/verify-integrity`);
     const json = await res.json();
     if (!json.ok && !json.status) {
-      alert('Integrity check error: ' + (json.error || json.message));
+      showCyberDialog('Integrity Check Error', `<p style="color:#f87171;">${escapeHtml(json.error || json.message || 'Verification could not be completed.')}</p>`, 'error');
       return;
     }
-    const color = json.verified ? '#10b981' : '#f59e0b';
-    alert(`[Evidence Integrity Check - Run #${id}]\n\nStatus: ${json.status}\nVerified: ${json.verified ? 'YES (Match)' : 'NO'}\n\nRecorded Hash: ${json.recorded_sha256 || 'None'}\nComputed Hash: ${json.computed_sha256 || 'None'}\n\n${json.message}`);
+    
+    const isVerified = json.verified;
+    const badgeColor = isVerified ? '#10b981' : '#f43f5e';
+    const badgeBg = isVerified ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)';
+    const badgeBorder = isVerified ? 'rgba(16,185,129,0.4)' : 'rgba(244,63,94,0.4)';
+    const statusText = isVerified ? 'VERIFIED · INTEGRITY INTACT' : (json.status || 'UNVERIFIED / TAMPERED');
+
+    const html = `
+      <div style="background: ${badgeBg}; border: 1px solid ${badgeBorder}; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--txt-2); font-weight: 600;">Cryptographic State</span>
+        <span style="color: ${badgeColor}; font-weight: 700; font-size: 12px; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 6px;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: ${badgeColor}; box-shadow: 0 0 8px ${badgeColor};"></span>
+          ${statusText}
+        </span>
+      </div>
+
+      <div style="background: rgba(6,10,22,0.7); border: 1px solid rgba(120,145,200,0.14); border-radius: 10px; padding: 14px; margin-bottom: 14px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+        <div style="margin-bottom: 10px;">
+          <div style="color: var(--txt-2); font-size: 10px; text-transform: uppercase; margin-bottom: 3px; font-weight: 600;">Recorded SHA-256 Hash</div>
+          <div style="color: #22d3ee; word-break: break-all; background: rgba(34,211,238,0.06); padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(34,211,238,0.15);">
+            ${escapeHtml(json.recorded_sha256 || 'None')}
+          </div>
+        </div>
+        <div>
+          <div style="color: var(--txt-2); font-size: 10px; text-transform: uppercase; margin-bottom: 3px; font-weight: 600;">Computed SHA-256 Hash</div>
+          <div style="color: #c4b5fd; word-break: break-all; background: rgba(139,92,246,0.06); padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(139,92,246,0.15);">
+            ${escapeHtml(json.computed_sha256 || 'None')}
+          </div>
+        </div>
+      </div>
+
+      <p style="font-size: 12.5px; color: var(--txt-1); margin: 0; line-height: 1.5;">
+        ${escapeHtml(json.message || (isVerified ? 'Evidence integrity verified: file matches recorded SHA-256 hash.' : 'Warning: File checksum did not match the stored evidence hash.'))}
+      </p>
+    `;
+
+    showCyberDialog(`Evidence Integrity Check — Run #${id}`, html, isVerified ? 'success' : 'warning');
   } catch(e) {
-    alert('Integrity verification failed: ' + e);
+    showCyberDialog('Verification Failed', `<p style="color:#f87171;">Integrity verification failed: ${escapeHtml(e.message || e)}</p>`, 'error');
   }
 }
 
@@ -1004,14 +1401,23 @@ async function generatePDF() {
   const id = getRunId();
   try {
     const res = await fetch(`/api/investigations/${id}/reports`, { method: 'POST' });
-    if (!res.ok) { const j = await res.json(); alert('Error: ' + j.error); return; }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      showCyberDialog('Export Failed', `<p style="color:#f87171;">Failed to generate PDF: ${escapeHtml(j.error || 'Server error occurred.')}</p>`, 'error');
+      return;
+    }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `shadowtrace_report_${id}.pdf`;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
-  } catch(e) { alert('PDF generation failed: ' + e); }
+    if (window.toast) {
+      window.toast('success', 'Download Started', `PDF report for Run #${id} generated.`);
+    }
+  } catch(e) {
+    showCyberDialog('Export Failed', `<p style="color:#f87171;">PDF generation failed: ${escapeHtml(e.message || e)}</p>`, 'error');
+  }
 }
 
 function exportCSV(type) {
@@ -1052,3 +1458,4 @@ async function loadAuditTrail() {
 }
 </script>
 </body>
+</html>
