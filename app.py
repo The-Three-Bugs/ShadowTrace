@@ -1269,12 +1269,23 @@ def get_investigation_findings(investigation_id):
     severity = request.args.get('severity', '').strip()
     status = request.args.get('status', '').strip()
     rule = request.args.get('rule', '').strip()
-    
+    run_id = request.args.get('run_id', type=int)
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
+    if not run_id:
+        cursor.execute('SELECT id FROM analysis_runs WHERE investigation_id = ? ORDER BY id DESC LIMIT 1', (investigation_id,))
+        latest_run = cursor.fetchone()
+        if latest_run:
+            run_id = latest_run['id']
+
     query = 'SELECT * FROM findings WHERE investigation_id = ?'
     params = [investigation_id]
+
+    if run_id:
+        query += ' AND analysis_run_id = ?'
+        params.append(run_id)
     
     if severity and severity != 'All':
         query += ' AND severity = ?'
@@ -1408,34 +1419,37 @@ def upload_file():
         
     stored_path = None
     try:
-        raw_bytes = file.read()
-        file_size = len(raw_bytes)
-        if file_size == 0:
-            return jsonify({'error': 'Uploaded file is empty.'}), 400
-        if file_size > cfg.MAX_CONTENT_LENGTH:
-            return jsonify({'error': 'File exceeds maximum upload size limit (16MB).'}), 400
-
-        # Calculate SHA-256 evidence integrity hash (SECURITY-4 Section 3)
-        sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
-
         # Secure file storage outside public static/ with safe UUID filename (SECURITY-4 Section 2)
         stored_name = safe_filename(file.filename)
         target_path = os.path.join(cfg.UPLOAD_FOLDER, stored_name)
-        
+
         # Path traversal verification
         abs_target = os.path.abspath(target_path)
         abs_root = os.path.abspath(cfg.UPLOAD_FOLDER)
         if not abs_target.startswith(abs_root):
             return jsonify({'error': 'Invalid file destination path detected.'}), 400
 
-        # Save evidence file
-        with open(target_path, 'wb') as f_out:
-            f_out.write(raw_bytes)
+        # Stream-save evidence file to disk (supports large datasets without OOM)
+        file.save(target_path)
         stored_path = target_path
+        file_size = os.path.getsize(target_path)
+        if file_size == 0:
+            os.remove(target_path)
+            return jsonify({'error': 'Uploaded file is empty.'}), 400
+        if file_size > cfg.MAX_CONTENT_LENGTH:
+            os.remove(target_path)
+            return jsonify({'error': f'File exceeds maximum upload size limit ({cfg.MAX_CONTENT_LENGTH // (1024 * 1024)}MB).'}), 400
 
-        # Parse CSV content safely
-        stream = io.StringIO(raw_bytes.decode('utf-8', errors='replace'))
-        parsed = process_csv_content(stream)
+        # Calculate SHA-256 evidence integrity hash in 1MB chunks
+        sha256_hasher = hashlib.sha256()
+        with open(target_path, 'rb') as f_hash:
+            for chunk in iter(lambda: f_hash.read(1024 * 1024), b''):
+                sha256_hasher.update(chunk)
+        sha256_hash = sha256_hasher.hexdigest()
+
+        # Parse CSV content safely via streaming (capped at 10,000 rows for fast analysis)
+        with open(target_path, 'r', encoding='utf-8', errors='replace', newline='') as f_csv:
+            parsed = process_csv_content(f_csv, max_rows=10000)
         valid_records = parsed['valid_records']
         total_records = parsed['total']
         invalid_count = parsed['invalid_count']
@@ -2859,4 +2873,5 @@ def handle_investigation_evidence(investigation_id):
 
 if __name__ == '__main__':
     # Production vs Development debug settings (SECURITY-4 Section 4.1)
-    app.run(debug=cfg.DEBUG, host='127.0.0.1' if cfg.DEBUG else '0.0.0.0', port=5000)
+    # Disable Werkzeug reloader on Windows to prevent daemon thread stderr lock errors on shutdown
+    app.run(debug=cfg.DEBUG, use_reloader=False, host='127.0.0.1' if cfg.DEBUG else '0.0.0.0', port=5000)

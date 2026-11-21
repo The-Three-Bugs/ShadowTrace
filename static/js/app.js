@@ -151,6 +151,7 @@ const api = {
       search: state.threatSearch,
       severity: state.threatSeverity
     });
+    if (state.currentRunId) p.set('run_id', state.currentRunId);
     const rId = runId || state.currentRunId;
     if (rId) p.set('run_id', rId);
     const r = await fetch(`/api/detections?${p}`);
@@ -242,7 +243,9 @@ async function loadInvestigations() {
         $('invCountLabel').textContent = `${invs.length} total investigations`;
       }
       if ($('navInvBadge')) {
-        $('navInvBadge').textContent = invs.length;
+        const openInvs = invs.filter((inv) => !['Completed', 'Closed', 'Resolved'].includes(inv.status)).length;
+        $('navInvBadge').textContent = openInvs;
+        $('navInvBadge').dataset.zero = openInvs === 0;
       }
       
       if (invs.length === 0) {
@@ -1065,13 +1068,15 @@ async function loadThreats() {
       search: state.threatSearch,
       severity: state.threatSeverity
     });
+    if (state.currentRunId) p.set('run_id', state.currentRunId);
     const res = await fetch(`/api/investigations/1/findings?${p}`);
     const data = await res.json();
     const tbody = $('threatsBody');
     const rows = data.data || [];
     $('threatCountLabel').textContent = `${rows.length} findings`;
-    $('navThreatBadge').textContent = rows.length;
-    $('navThreatBadge').dataset.zero = rows.length === 0;
+    const openCount = rows.filter((r) => !['Resolved', 'Completed', 'Closed', 'False Positive'].includes(r.status)).length;
+    $('navThreatBadge').textContent = openCount;
+    $('navThreatBadge').dataset.zero = openCount === 0;
 
     if (!rows.length) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="9">No threats detected yet.</td></tr>`;
