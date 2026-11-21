@@ -178,9 +178,7 @@
 }
 
 /* ============ AUDIT — FILTER INPUTS ============ */
-#auditActionFilter,
-#auditDateFrom,
-#auditDateTo {
+#auditActionFilter {
   padding: 8px 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -194,22 +192,60 @@
     inset -2px -2px 4px rgba(255, 255, 255, 0.02);
   transition: border-color 0.25s, box-shadow 0.25s;
   appearance: none;
-}
-#auditActionFilter {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f8aab' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 34px;
 }
-#auditActionFilter:focus,
-#auditDateFrom:focus,
-#auditDateTo:focus {
+#auditActionFilter:focus {
   border-color: rgba(34, 211, 238, 0.5);
   box-shadow:
     inset 3px 3px 6px rgba(0, 0, 0, 0.55),
     0 0 12px rgba(34, 211, 238, 0.18);
 }
 #auditActionFilter option { background: #0f1524; color: #f1f5ff; }
+
+.date-filter-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #080d19;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.55),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.02);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.date-filter-wrap:focus-within {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.55),
+    0 0 12px rgba(34, 211, 238, 0.18);
+}
+.date-filter-wrap label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+.date-filter-wrap input[type="date"] {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 2px 4px !important;
+  color: var(--txt-0);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none !important;
+  color-scheme: dark;
+  cursor: pointer;
+}
 
 /* ============ REPORTS — STYLED BUTTONS ============ */
 .view-reports .btn,

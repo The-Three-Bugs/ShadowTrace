@@ -799,7 +799,6 @@ let historyRunsCache = [];
 async function loadUploadHistory() {
   const tbody = $('uploadHistoryBody');
   const loadBtn = $('loadPreviousFileBtn');
-  const barBtn = $('loadPreviousFileBarBtn');
   const selectedBar = $('historySelectedBar');
   if (!tbody) return;
 
@@ -811,7 +810,6 @@ async function loadUploadHistory() {
     if (!runs.length) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No files uploaded yet. Upload a CSV to view history.</td></tr>`;
       if (loadBtn) loadBtn.disabled = true;
-      if (barBtn) barBtn.disabled = true;
       if (selectedBar) selectedBar.style.display = 'none';
       selectedHistoryRunId = null;
       return;
@@ -856,7 +854,13 @@ async function loadUploadHistory() {
 }
 
 function selectHistoryRun(runId) {
-  selectedHistoryRunId = parseInt(runId, 10);
+  const parsedId = parseInt(runId, 10);
+  // Toggle selection: if already selected, deselect it
+  if (selectedHistoryRunId === parsedId) {
+    deselectHistoryRun();
+    return;
+  }
+  selectedHistoryRunId = parsedId;
   document.querySelectorAll('#uploadHistoryTable tr.history-row').forEach((tr) => {
     const id = parseInt(tr.dataset.runId, 10);
     const radio = tr.querySelector('input[type="radio"]');
@@ -871,23 +875,30 @@ function selectHistoryRun(runId) {
   updateHistorySelectionUI();
 }
 
+function deselectHistoryRun() {
+  selectedHistoryRunId = null;
+  document.querySelectorAll('#uploadHistoryTable tr.history-row').forEach((tr) => {
+    tr.classList.remove('selected');
+    const radio = tr.querySelector('input[type="radio"]');
+    if (radio) radio.checked = false;
+  });
+  updateHistorySelectionUI();
+}
+
 function updateHistorySelectionUI() {
   const loadBtn = $('loadPreviousFileBtn');
-  const barBtn = $('loadPreviousFileBarBtn');
   const selectedBar = $('historySelectedBar');
   const nameEl = $('historySelectedName');
   const metaEl = $('historySelectedMeta');
 
   if (!selectedHistoryRunId) {
     if (loadBtn) loadBtn.disabled = true;
-    if (barBtn) barBtn.disabled = true;
     if (selectedBar) selectedBar.style.display = 'none';
     return;
   }
 
   const run = historyRunsCache.find((r) => r.id === selectedHistoryRunId);
   if (loadBtn) loadBtn.disabled = false;
-  if (barBtn) barBtn.disabled = false;
   if (selectedBar) {
     selectedBar.style.display = 'flex';
     if (nameEl) nameEl.textContent = run ? run.filename : `Run #${selectedHistoryRunId}`;
@@ -930,7 +941,7 @@ async function loadSelectedPreviousFile() {
 function bindHistoryGrid() {
   const tbody = $('uploadHistoryBody');
   const loadBtn = $('loadPreviousFileBtn');
-  const barBtn = $('loadPreviousFileBarBtn');
+  const clearBtn = $('clearHistorySelectBtn');
 
   if (tbody) {
     tbody.addEventListener('click', (e) => {
@@ -948,10 +959,10 @@ function bindHistoryGrid() {
     });
   }
 
-  if (barBtn) {
-    barBtn.addEventListener('click', (e) => {
+  if (clearBtn) {
+    clearBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      loadSelectedPreviousFile();
+      deselectHistoryRun();
     });
   }
 }
@@ -2314,6 +2325,20 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
     document.body.appendChild(overlay);
+
+    const loggedInUser = (typeof currentUser !== 'undefined' && currentUser && currentUser.username)
+      ? currentUser.username
+      : (document.getElementById('userBadge') && document.getElementById('userBadge').textContent.trim() !== 'Guest'
+        ? document.getElementById('userBadge').textContent.trim()
+        : '');
+    if (loggedInUser) {
+      const fpUserInp = overlay.querySelector('#fpUsername');
+      fpUserInp.value = loggedInUser;
+      fpUserInp.readOnly = true;
+      fpUserInp.style.opacity = '0.7';
+      fpUserInp.style.cursor = 'not-allowed';
+      fpUserInp.title = 'While logged in, you can only reset your own password.';
+    }
 
     const statusEl = overlay.querySelector('#fpStatusMsg');
     const setStatus = (msg, ok) => {

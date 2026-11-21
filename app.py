@@ -742,6 +742,8 @@ def api_forgot_password_lookup():
     username = (data.get('username') or '').strip()
     if not username:
         return jsonify({'ok': False, 'error': {'code': 'MISSING_USER', 'message': 'Please enter a username to search.'}}), 400
+    if session.get('user_id') and username != session.get('username'):
+        return jsonify({'ok': False, 'error': {'code': 'FORBIDDEN', 'message': 'While logged in, you can only reset your own password.'}}), 403
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -778,6 +780,8 @@ def api_forgot_password_verify_code():
 
     if not username or not code:
         return jsonify({'ok': False, 'error': {'code': 'MISSING_FIELDS', 'message': 'Username and 6-digit code are required.'}}), 400
+    if session.get('user_id') and username != session.get('username'):
+        return jsonify({'ok': False, 'error': {'code': 'FORBIDDEN', 'message': 'While logged in, you can only reset your own password.'}}), 403
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -809,6 +813,8 @@ def api_forgot_password_request():
     username = (data.get('username') or '').strip()
     if not username:
         return jsonify({'ok': False, 'error': {'code': 'MISSING_USER', 'message': 'Username is required.'}}), 400
+    if session.get('user_id') and username != session.get('username'):
+        return jsonify({'ok': False, 'error': {'code': 'FORBIDDEN', 'message': 'While logged in, you can only reset your own password.'}}), 403
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -845,6 +851,9 @@ def api_forgot_password_reset():
     username = (data.get('username') or '').strip()
     code = (data.get('code') or '').strip()
     new_password = data.get('new_password') or ''
+
+    if session.get('user_id') and username != session.get('username'):
+        return jsonify({'ok': False, 'error': {'code': 'FORBIDDEN', 'message': 'While logged in, you can only reset your own password.'}}), 403
 
     valid, msg = validate_password_policy(new_password)
     if not valid:

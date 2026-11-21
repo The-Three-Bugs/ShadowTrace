@@ -381,8 +381,8 @@
               <strong id="historySelectedName" style="color: var(--cyan); margin-left: 6px;">None</strong>
               <span id="historySelectedMeta" style="color: var(--txt-2); margin-left: 8px;"></span>
             </div>
-            <button class="btn primary sm" id="loadPreviousFileBarBtn">
-              <i data-lucide="play"></i> Load This File
+            <button class="btn ghost sm" id="clearHistorySelectBtn" style="font-size: 11px; padding: 4px 10px; color: var(--txt-2);">
+              <i data-lucide="x"></i> Deselect
             </button>
           </div>
 
@@ -713,8 +713,14 @@
             <option value="EXPORT_FINDINGS">Export Findings</option>
             <option value="EXPORT_EVIDENCE">Export Evidence</option>
           </select>
-          <input type="date" id="auditDateFrom">
-          <input type="date" id="auditDateTo">
+          <div class="date-filter-wrap">
+            <label for="auditDateFrom" style="color: #22d3ee;" title="Filter Start Date"><i data-lucide="calendar" style="width:13px;height:13px;margin-right:4px;"></i>From:</label>
+            <input type="date" id="auditDateFrom" title="Start Date (From)" aria-label="From Date">
+          </div>
+          <div class="date-filter-wrap">
+            <label for="auditDateTo" style="color: #a78bfa;" title="Filter End Date"><i data-lucide="calendar" style="width:13px;height:13px;margin-right:4px;"></i>To:</label>
+            <input type="date" id="auditDateTo" title="End Date (To)" aria-label="To Date">
+          </div>
           <button class="btn primary" onclick="loadAuditTrail()">
             <i data-lucide="filter"></i> Filter
           </button>
