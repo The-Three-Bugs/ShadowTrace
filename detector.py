@@ -124,6 +124,54 @@ def analyze_records(records):
                 'supporting_event_ids': [rec['_temp_index']]
             })
 
+    # Check Rule 4: Threat Signatures, Scanner User-Agents & DDoS / Volumetric Flood
+    critical_sigs = ['ddos', 'dos', 'ransomware', 'malware', 'exploit', 'sql_injection', 'xss', 'malicious', 'attack']
+    scanner_sigs = ['nmap', 'sqlmap', 'nikto', 'masscan', 'hydra', 'dirbuster']
+    for rec in records:
+        evt_lower = str(rec.get('event_type', '')).lower()
+        status_lower = str(rec.get('status', '')).lower()
+        threat_lower = str(rec.get('threat_label', '')).lower()
+        ua_lower = str(rec.get('user_agent', '')).lower()
+
+        if any(sig in threat_lower or sig in evt_lower for sig in critical_sigs):
+            rec['severity'] = 'Critical'
+            rec['detection_reason'] = f'Critical threat signature detected ({rec.get("threat_label") or rec.get("event_type")})'
+        elif any(sig in ua_lower for sig in scanner_sigs):
+            if rec.get('severity') == 'Low':
+                rec['severity'] = 'High'
+                rec['detection_reason'] = f'Automated security scanner detected ({rec.get("user_agent")})'
+        elif status_lower in ['blocked', 'denied', 'dropped'] and rec.get('severity') == 'Low':
+            rec['severity'] = 'Medium'
+            rec['detection_reason'] = f'Blocked/denied {rec.get("event_type")} traffic from {rec.get("source_ip")}'
+
+    # Volumetric / DDoS detection per source IP
+    for ip, events in ip_events.items():
+        blocked_cnt = sum(1 for r in events if str(r.get('status', '')).lower() in ['blocked', 'denied', 'dropped'])
+        if len(events) >= 40 or blocked_cnt >= 10:
+            sev = 'Critical' if (len(events) >= 80 or blocked_cnt >= 25) else 'High'
+            evidence_text = f'Volumetric / DDoS anomaly from {ip}: {len(events)} total events ({blocked_cnt} blocked).'
+            detections.append({
+                'timestamp': events[0].get('timestamp', '2026-10-14 00:00:00'),
+                'source_ip': ip,
+                'rule_triggered': 'Rule 4: DDoS / Volumetric Flood & Perimeter Probe',
+                'severity': sev,
+                'evidence': evidence_text,
+                'status': 'Active'
+            })
+            findings.append({
+                'rule_id': 'RULE-04',
+                'rule_name': 'DDoS / Volumetric Flood & Perimeter Probe',
+                'description': evidence_text,
+                'severity': sev,
+                'status': 'New',
+                'detected_at': events[0].get('timestamp', '2026-10-14 00:00:00'),
+                'supporting_event_ids': [r['_temp_index'] for r in events[:25]]
+            })
+            for r in events:
+                if r.get('severity') in ['Low', 'Medium']:
+                    r['severity'] = sev
+                    r['detection_reason'] = evidence_text
+
     # Update record severities for Rule 1
     for rec in records:
         ip = rec.get('source_ip')

@@ -36,7 +36,7 @@ class Config:
     )
 
     # Upload size limit: 16 MB
-    MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
+    MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 1024 * 1024 * 1024))
 
     # Allowed file extensions for uploads
     ALLOWED_EXTENSIONS = {'csv'}

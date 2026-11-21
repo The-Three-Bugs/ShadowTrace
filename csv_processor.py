@@ -28,20 +28,45 @@ def parse_timestamp(ts_str):
             
     return ts_str, False
 
-def process_csv_content(file_stream):
+COLUMN_ALIASES = {
+    'timestamp': ['timestamp', 'time', 'date', 'datetime', 'created_at', 'event_time', 'log_time', 'ts'],
+    'source_ip': ['source_ip', 'src_ip', 'ip', 'ip_address', 'client_ip', 'remote_addr', 'src', 'srcaddr', 'host_ip'],
+    'event_type': ['event_type', 'event', 'attack_type', 'threat_label', 'activity', 'protocol', 'type', 'category', 'log_type', 'request_path'],
+    'username': ['username', 'user', 'user_name', 'account', 'actor', 'userid', 'user_id', 'principal'],
+    'status': ['status', 'action', 'result', 'outcome', 'state', 'decision', 'severity'],
+    'log_source': ['log_type', 'log_source', 'source', 'sensor'],
+    'threat_label': ['threat_label', 'label', 'attack_type', 'classification'],
+    'user_agent': ['user_agent', 'ua', 'agent'],
+}
+
+
+def _resolve_column_map(normalized_header):
+    """Map any real-world CSV header to ShadowTrace's canonical fields."""
+    col_map = {}
+    for canonical, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            if alias in normalized_header:
+                col_map[canonical] = normalized_header.index(alias)
+                break
+    return col_map
+
+
+def process_csv_content(file_stream, max_rows=10000):
     """
-    Processes a CSV file stream (bytes or string), validates columns,
-    normalizes timestamps and events, tracks invalid rows and duplicates,
-    and returns a summary dictionary.
+    Processes a CSV file stream (bytes, string, or file-like), automatically
+    maps real-world/Kaggle column schemas, normalizes timestamps and events,
+    tracks invalid rows and duplicates, and returns a summary dictionary.
     """
-    if hasattr(file_stream, 'read'):
+    if hasattr(file_stream, 'readline'):
+        f = file_stream
+    elif hasattr(file_stream, 'read'):
         content = file_stream.read()
         if isinstance(content, bytes):
             content = content.decode('utf-8', errors='ignore')
+        f = io.StringIO(content)
     else:
-        content = str(file_stream)
+        f = io.StringIO(str(file_stream))
 
-    f = io.StringIO(content)
     reader = csv.reader(f)
     
     try:
@@ -51,19 +76,14 @@ def process_csv_content(file_stream):
 
     # Normalize header: lowercase, strip whitespace
     normalized_header = [col.strip().lower() for col in header]
-    
-    req_cols = ['timestamp', 'username', 'source_ip', 'event_type', 'status']
-    col_map = {}
-    missing_cols = []
-    
-    for req in req_cols:
-        if req in normalized_header:
-            col_map[req] = normalized_header.index(req)
-        else:
-            missing_cols.append(req)
+    col_map = _resolve_column_map(normalized_header)
 
-    if missing_cols:
-        raise ValueError(f"CSV missing required columns: {', '.join(missing_cols)}. Expected columns: {', '.join(req_cols)}.")
+    # Only timestamp and source_ip (or event_type) are strictly needed; others default gracefully
+    if 'timestamp' not in col_map and 'source_ip' not in col_map:
+        raise ValueError(
+            "CSV must contain at least a timestamp or source IP column "
+            f"(found: {', '.join(header[:10])})."
+        )
 
     valid_records = []
     invalid_rows = []
@@ -73,6 +93,8 @@ def process_csv_content(file_stream):
 
     row_number = 1 # Header is row 1
     for row in reader:
+        if max_rows and total_count >= max_rows:
+            break
         row_number += 1
         total_count += 1
         
@@ -84,11 +106,26 @@ def process_csv_content(file_stream):
             continue
 
         try:
-            raw_ts = row[col_map['timestamp']].strip() if len(row) > col_map['timestamp'] else ''
-            username = row[col_map['username']].strip() if len(row) > col_map['username'] else 'anonymous'
-            source_ip = row[col_map['source_ip']].strip() if len(row) > col_map['source_ip'] else ''
-            event_type = row[col_map['event_type']].strip() if len(row) > col_map['event_type'] else ''
-            status = row[col_map['status']].strip() if len(row) > col_map['status'] else 'unknown'
+            def _get(field, default=''):
+                idx = col_map.get(field)
+                if idx is not None:
+                    return row[idx].strip() if len(row) > idx else ''
+                return default
+
+            raw_ts = _get('timestamp', '2026-10-14 00:00:00')
+            username = _get('username', 'unknown')
+            source_ip = _get('source_ip', '0.0.0.0')
+            event_type = _get('event_type', 'network_event')
+            status = _get('status', 'unknown')
+            log_source = _get('log_source', '')
+            threat_label = _get('threat_label', '')
+            user_agent = _get('user_agent', '')
+
+            # If event_type is generic like 'benign' and log_source exists, make event_type descriptive
+            if event_type.lower() in ('benign', 'normal', 'clean') and log_source:
+                event_type = f"{log_source}_traffic"
+            elif log_source and event_type.lower() == log_source.lower():
+                event_type = f"{log_source}_event"
 
             # Validation checks & field length limits
             reasons = []
@@ -125,6 +162,9 @@ def process_csv_content(file_stream):
                 'source_ip': source_ip,
                 'event_type': event_type,
                 'status': status,
+                'log_source': log_source,
+                'threat_label': threat_label,
+                'user_agent': user_agent,
                 'severity': 'Low',
                 'detection_reason': 'Normal activity'
             })
