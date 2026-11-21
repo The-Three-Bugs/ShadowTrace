@@ -472,35 +472,9 @@
       if (v) v.play().catch(() => {});
     }
 
-    // 2. Topbar Continuous Team Badge
-    const topbarRight = document.querySelector('.topbar-right');
-    if (topbarRight && !document.getElementById('teamContinuousBadge')) {
-      const badge = document.createElement('div');
-      badge.className = 'team-continuous-badge';
-      badge.id = 'teamContinuousBadge';
-      badge.title = 'The Three Bugs — Click to assemble squad!';
-      badge.innerHTML = `
-        <div class="team-badge-video-wrap">
-          <video class="team-badge-video" autoplay loop muted playsinline src="/static/3Bugs.mp4"></video>
-        </div>
-        <div class="team-badge-info">
-          <span class="team-badge-name">The Three Bugs</span>
-          <span class="team-badge-status"><span class="team-dot-live"></span>Continuous Live</span>
-        </div>
-      `;
-      // Insert before refresh button or avatar
-      topbarRight.insertBefore(badge, topbarRight.firstChild);
-
-      badge.addEventListener('click', () => {
-        isSquadFormation = !isSquadFormation;
-        bugs.forEach(b => b.celebrate());
-        const toastFn = window.toast || function () {};
-        toastFn('info', 'The Three Bugs Squad', isSquadFormation ? 'Squad assembled in formation!' : 'Bugs roaming freely across UI.');
-      });
-
-      const bv = badge.querySelector('video');
-      if (bv) bv.play().catch(() => {});
-    }
+    // 2. Topbar Continuous Team Badge - removed per user request
+    const existingBadge = document.getElementById('teamContinuousBadge');
+    if (existingBadge) existingBadge.remove();
   }
 
   // HUD Squad Controller
